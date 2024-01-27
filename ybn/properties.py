@@ -81,6 +81,8 @@ class CollisionProperties(CollisionMatFlags, bpy.types.PropertyGroup):
     ped_density: bpy.props.IntProperty(name="Ped Density", default=0)
     material_color_index: bpy.props.IntProperty(
         name="Material Color Index", default=0)
+    unk: bpy.props.IntProperty(
+        name="Unk", default=0)
 
 
 class BoundFlags(bpy.types.PropertyGroup):
@@ -123,9 +125,56 @@ class BoundFlags(bpy.types.PropertyGroup):
         name="MAP DEEP SURFACE", default=False)
 
 
+class RDRBoundFlags(bpy.types.PropertyGroup):
+    cf_void_type_bit: bpy.props.BoolProperty(name="CF VOID TYPE BIT", default=False)
+    cf_map_type_weapon: bpy.props.BoolProperty(name="CF MAP TYPE WEAPON", default=False)
+    cf_map_type_mover: bpy.props.BoolProperty(name="CF MAP TYPE MOVER", default=False)
+    cf_map_type_horse: bpy.props.BoolProperty(name="CF MAP TYPE HORSE", default=False)
+    cf_cover_type: bpy.props.BoolProperty(name="CF COVER TYPE", default=False)
+    cf_map_type_vehicle: bpy.props.BoolProperty(name="CF MAP TYPE VEHICLE", default=False)
+    cf_vehicle_non_bvh_type: bpy.props.BoolProperty(
+        name="CF VEHICLE NON BVH TYPE", default=False)
+    cf_vehicle_bvh_type: bpy.props.BoolProperty(name="CF VEHICLE BVH TYPE", default=False)
+    cf_box_vehicle_type: bpy.props.BoolProperty(name="CF BOX VEHICLE TYPE", default=False)
+    cf_ped_type: bpy.props.BoolProperty(name="CF PED TYPE", default=False)
+    cf_ragdoll_type: bpy.props.BoolProperty(name="CF RAGDOLL TYPE", default=False)
+    cf_horse_type: bpy.props.BoolProperty(
+        name="CF HORSE TYPE", default=False)
+    cf_horse_ragdoll_type: bpy.props.BoolProperty(name="CF HORSE RAGDOLL TYPE", default=False)
+    cf_object_type: bpy.props.BoolProperty(
+        name="CF OBJECT TYPE", default=False)
+    cf_envcloth_object_type: bpy.props.BoolProperty(name="CF ENVCLOTH OBJECT TYPE", default=False)
+    cf_plant_type: bpy.props.BoolProperty(name="CF PLANT TYPE", default=False)
+    cf_projectile_type: bpy.props.BoolProperty(name="CF PROJECTILE TYPE", default=False)
+    cf_explosion_type: bpy.props.BoolProperty(name="CF EXPLOSION TYPE", default=False)
+    cf_pickup_type: bpy.props.BoolProperty(name="CF PICKUP TYPE", default=False)
+    cf_foliage_type: bpy.props.BoolProperty(
+        name="CF FOLIAGE TYPE", default=False)
+    cf_forklift_forks_type: bpy.props.BoolProperty(name="CF FORKLIFT FORKS TYPE", default=False)
+    cf_weapon_test: bpy.props.BoolProperty(name="CF WEAPON TEST", default=False)
+    cf_camera_test: bpy.props.BoolProperty(name="CF CAMERA TEST", default=False)
+    cf_ai_test: bpy.props.BoolProperty(name="CF AI TEST", default=False)
+    cf_script_test: bpy.props.BoolProperty(
+        name="CF SCRIPT TEST", default=False)
+    cf_wheel_test: bpy.props.BoolProperty(name="CF WHEEL TEST", default=False)
+    cf_glass_type: bpy.props.BoolProperty(name="CF GLASS TYPE", default=False)
+    cf_river_type: bpy.props.BoolProperty(name="CF RIVER TYPE", default=False)
+    cf_smoke_type: bpy.props.BoolProperty(name="CF SMOKE TYPE", default=False)
+    cf_unsmashed_type: bpy.props.BoolProperty(name="CF UNSMASHED TYPE", default=False)
+    cf_stair_slope_type: bpy.props.BoolProperty(
+        name="CF STAIR SLOPE TYPE", default=False)
+    cf_deep_surface_type: bpy.props.BoolProperty(name="CF DEEP SURFACE TYPE", default=False)
+    cf_no_horse_walkable_type: bpy.props.BoolProperty(name="CF NO HORSE WALKABLE TYPE", default=False)
+    cf_map_type_ai_mover: bpy.props.BoolProperty(name="CF MAP TYPE AI MOVER", default=False)
+    cf_horse_avoidance: bpy.props.BoolProperty(name="CF HORSE AVOIDANCE", default=False)
+    cf_map_type_camera: bpy.props.BoolProperty(name="CF MAP TYPE CAMERA", default=False)
+
+
 class BoundProperties(bpy.types.PropertyGroup):
     inertia: bpy.props.FloatVectorProperty(name="Inertia")
     volume: bpy.props.FloatProperty(name="Volume", precision=3)
+    mass: bpy.props.FloatProperty(name="Mass", precision=3)
+    unk_11h: bpy.props.FloatProperty(name="Mass")
     unk_float_1: bpy.props.FloatProperty(name="UnkFloat 1")
     unk_float_2: bpy.props.FloatProperty(name="UnkFloat 2")
 
@@ -224,6 +273,11 @@ def register():
     bpy.types.Object.composite_flags2 = bpy.props.PointerProperty(
         type=BoundFlags)
 
+    bpy.types.Object.type_flags = bpy.props.PointerProperty(
+        type=RDRBoundFlags)
+    bpy.types.Object.include_flags = bpy.props.PointerProperty(
+        type=RDRBoundFlags)
+
     bpy.types.Scene.collision_material_index = bpy.props.IntProperty(
         name="Material Index")
     bpy.types.Scene.collision_materials = bpy.props.CollectionProperty(
@@ -320,6 +374,8 @@ def unregister():
     del bpy.types.Object.bound_dimensions
     del bpy.types.Object.composite_flags1
     del bpy.types.Object.composite_flags2
+    del bpy.types.Object.type_flags
+    del bpy.types.Object.include_flags
     del bpy.types.Scene.collision_material_index
     del bpy.types.Scene.collision_materials
     del bpy.types.Material.collision_properties

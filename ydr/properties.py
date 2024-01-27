@@ -126,6 +126,7 @@ class TextureFlags(bpy.types.PropertyGroup):
 
 
 class TextureProperties(bpy.types.PropertyGroup):
+    index: bpy.props.IntProperty(default=0)
     embedded: bpy.props.BoolProperty(name="Embedded", default=False)
     usage: bpy.props.EnumProperty(
         items=items_from_enums(TextureUsage),

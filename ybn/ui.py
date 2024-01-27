@@ -1,14 +1,19 @@
 import bpy
-from .properties import BoundFlags, CollisionProperties, CollisionMatFlags, BoundProperties
-from ..sollumz_properties import MaterialType, SollumType, BOUND_TYPES, BOUND_POLYGON_TYPES
+from .properties import BoundFlags, RDRBoundFlags, CollisionProperties, CollisionMatFlags, BoundProperties
+from ..sollumz_properties import MaterialType, SollumType, SollumzGame, BOUND_TYPES, BOUND_POLYGON_TYPES
 from .collision_materials import collisionmats
 from ..sollumz_ui import SOLLUMZ_PT_OBJECT_PANEL, SOLLUMZ_PT_MAT_PANEL
 from . import operators as ybn_ops
 
 
-def generate_flags(layout, prop):
+def generate_flags(layout, prop, game):
     grid = layout.grid_flow(columns=4, even_columns=True, even_rows=True)
-    for prop_name in BoundFlags.__annotations__:
+    flags = None
+    if game == SollumzGame.GTA:
+        flags = BoundFlags.__annotations__
+    elif game == SollumzGame.RDR:
+        flags = RDRBoundFlags.__annotations__
+    for prop_name in flags:
         grid.prop(prop, prop_name)
 
 
@@ -128,12 +133,22 @@ class SOLLUMZ_PT_BOUND_FLAGS_PANEL(bpy.types.Panel):
 
     def draw(self, context):
         obj = context.active_object
+        obj_game_type = obj.sollum_game_type
         layout = self.layout
         layout.label(text="Type Flags")
-        generate_flags(layout, obj.composite_flags1)
+
+        if obj_game_type == SollumzGame.GTA:
+            generate_flags(layout, obj.composite_flags1, obj_game_type)
+        elif obj_game_type == SollumzGame.RDR:
+            generate_flags(layout, obj.type_flags, obj_game_type)
+
         layout.separator_spacer()
         layout.label(text="Include Flags")
-        generate_flags(layout, obj.composite_flags2)
+
+        if obj_game_type == SollumzGame.GTA:
+            generate_flags(layout, obj.composite_flags2, obj_game_type)
+        elif obj_game_type == SollumzGame.RDR:
+            generate_flags(layout, obj.include_flags, obj_game_type)
 
 
 class SOLLUMZ_PT_MATERIAL_COL_FLAGS_PANEL(bpy.types.Panel):

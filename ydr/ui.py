@@ -558,6 +558,8 @@ class SOLLUMZ_PT_TXTPARAMS_PANEL(bpy.types.Panel):
                     row.prop(n.image, "filepath", text="Texture Path")
                     row = box.row()
                     row.prop(n.texture_properties, "embedded")
+                    row = box.row()
+                    row.prop(n.texture_properties, "extra_flags")
                     row.enabled = n.image.filepath != ""
                 else:
                     row = box.row()

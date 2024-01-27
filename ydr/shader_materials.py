@@ -10,8 +10,10 @@ from ..cwxml.shader import (
     ShaderParameterFloat3Def,
     ShaderParameterFloat4Def,
     ShaderParameterFloat4x4Def,
+    ShaderParameterSamplerDef,
+    ShaderParameterCBufferDef
 )
-from ..sollumz_properties import MaterialType
+from ..sollumz_properties import MaterialType, SollumzGame
 from ..tools.blenderhelper import find_bsdf_and_material_output
 from ..tools.animationhelper import add_global_anim_uv_nodes
 from ..tools.meshhelper import get_uv_map_name
@@ -378,7 +380,7 @@ def create_parameter_node(
     node_tree: bpy.types.NodeTree,
     param: (
         ShaderParameterFloatDef | ShaderParameterFloat2Def | ShaderParameterFloat3Def | ShaderParameterFloat4Def |
-        ShaderParameterFloat4x4Def
+        ShaderParameterFloat4x4Def | ShaderParameterSamplerDef | ShaderParameterCBufferDef
     )
 ) -> SzShaderNodeParameter:
     node: SzShaderNodeParameter = node_tree.nodes.new(SzShaderNodeParameter.bl_idname)
@@ -403,6 +405,21 @@ def create_parameter_node(
                 display_type = SzShaderNodeParameterDisplayType.RGBA
         case ShaderParameterType.FLOAT4X4:
             cols, rows = 4, 4
+        case ShaderParameterType.SAMPLER:
+            cols, rows = 1, 1
+            display_type = SzShaderNodeParameterDisplayType.DEFAULT
+        case ShaderParameterType.CBUFFER:
+            # setattr(node, "buffer", param.buffer)
+            # setattr(node, "offset", param.offset)
+            match param.value_type:
+                case ShaderParameterType.FLOAT:
+                    cols, rows = 1, 1
+                case ShaderParameterType.FLOAT2:
+                    cols, rows = 2, 1
+                case ShaderParameterType.FLOAT3:
+                    cols, rows = 3, 1
+                case ShaderParameterType.FLOAT4:
+                    cols, rows = 4, 1
 
     if param.hidden:
         display_type = SzShaderNodeParameterDisplayType.HIDDEN_IN_UI
@@ -801,11 +818,11 @@ def create_basic_shader_nodes(b: ShaderBuilder):
         match param.type:
             case ShaderParameterType.TEXTURE:
                 imgnode = create_image_node(node_tree, param)
-                if param.name in ("DiffuseSampler", "PlateBgSampler"):
+                if param.name in ("DiffuseSampler", "PlateBgSampler", "diffusetex"):
                     texture = imgnode
-                elif param.name in ("BumpSampler", "PlateBgBumpSampler"):
+                elif param.name in ("BumpSampler", "PlateBgBumpSampler", "normaltex", "bumptex"):
                     bumptex = imgnode
-                elif param.name == "SpecSampler":
+                elif param.name in ("SpecSampler", "speculartex"):
                     spectex = imgnode
                 elif param.name == "DetailSampler":
                     detltex = imgnode
@@ -825,8 +842,12 @@ def create_basic_shader_nodes(b: ShaderBuilder):
                   ShaderParameterType.FLOAT2 |
                   ShaderParameterType.FLOAT3 |
                   ShaderParameterType.FLOAT4 |
-                  ShaderParameterType.FLOAT4X4):
+                  ShaderParameterType.FLOAT4X4 |
+                  ShaderParameterType.SAMPLER |
+                  ShaderParameterType.CBUFFER):
                 create_parameter_node(node_tree, param)
+            case ShaderParameterType.UNKNOWN:
+                continue
             case _:
                 raise Exception(f"Unknown shader parameter! {param.type=} {param.name=}")
 
@@ -1053,20 +1074,27 @@ def link_uv_map_nodes_to_textures(b: ShaderBuilder):
         node_tree.links.new(uv_map_node.outputs[0], tex_node.inputs[0])
 
 
-def create_shader(filename: str):
-    shader = ShaderManager.find_shader(filename)
+def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA):
+    shader = ShaderManager.find_shader(filename, game)
     if shader is None:
         raise AttributeError(f"Shader '{filename}' does not exist!")
 
     filename = shader.filename  # in case `filename` was hashed initially
-    base_name = ShaderManager.find_shader_base_name(filename)
+    base_name = ShaderManager.find_shader_base_name(filename, game)
 
     mat = bpy.data.materials.new(filename.replace(".sps", ""))
     mat.sollum_type = MaterialType.SHADER
+    # mat.game = game
     mat.use_nodes = True
     mat.shader_properties.name = base_name
     mat.shader_properties.filename = filename
-    mat.shader_properties.renderbucket = shader.render_bucket
+    if game == SollumzGame.GTA:
+        mat.shader_properties.renderbucket = shader.render_bucket
+    elif game == SollumzGame.RDR:
+        if isinstance(shader.render_bucket, int):
+            mat.shader_properties.renderbucket = shader.render_bucket
+        else:
+            mat.shader_properties.renderbucket = shader.render_bucket[0]
 
     bsdf, material_output = find_bsdf_and_material_output(mat)
     assert material_output is not None, "ShaderNodeOutputMaterial not found in default node_tree!"

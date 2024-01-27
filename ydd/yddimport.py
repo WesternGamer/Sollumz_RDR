@@ -4,18 +4,22 @@ from typing import Optional
 from ..cwxml.drawable import YDD, DrawableDictionary, Skeleton
 from ..cwxml.fragment import YFT, Fragment
 from ..ydr.ydrimport import create_drawable_obj, create_drawable_skel, apply_rotation_limits
-from ..sollumz_properties import SollumType
+from ..sollumz_properties import SollumType, SollumzGame
 from ..sollumz_preferences import get_import_settings
 from ..tools.blenderhelper import create_empty_object, create_blender_object
 from ..tools.utils import get_filename
 
 from .. import logger
 
+current_game = SollumzGame.GTA
 
 def import_ydd(filepath: str):
     import_settings = get_import_settings()
 
     ydd_xml = YDD.from_xml_file(filepath)
+    
+    global current_game
+    current_game = ydd_xml.game
 
     if import_settings.import_ext_skeleton:
         skel_yft = load_external_skeleton(filepath)
@@ -75,16 +79,20 @@ def create_ydd_obj(ydd_xml: DrawableDictionary, filepath: str):
     name = get_filename(filepath)
     dict_obj = create_empty_object(SollumType.DRAWABLE_DICTIONARY, name)
 
-    ydd_skel = find_first_skel(ydd_xml)
+    ydd_xml_list = ydd_xml
+    if current_game == SollumzGame.RDR:
+        ydd_xml_list = ydd_xml.drawables
 
-    for drawable_xml in ydd_xml:
+    ydd_skel = find_first_skel(ydd_xml_list)
+
+    for drawable_xml in ydd_xml_list:
         if not drawable_xml.skeleton.bones and ydd_skel is not None:
             external_bones = ydd_skel.bones
         else:
             external_bones = None
 
         drawable_obj = create_drawable_obj(
-            drawable_xml, filepath, external_bones=external_bones)
+            drawable_xml, filepath, external_bones=external_bones, game=current_game)
         drawable_obj.parent = dict_obj
 
     return dict_obj

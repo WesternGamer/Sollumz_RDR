@@ -1,3 +1,5 @@
+from Sollumz.cwxml.drawable_RDR import VERT_ATTR_DTYPES
+from Sollumz.sollumz_properties import SollumzGame
 import bpy
 import numpy as np
 from numpy.typing import NDArray
@@ -6,6 +8,8 @@ from typing import Tuple, Optional
 from ..tools.meshhelper import flip_uvs
 from ..cwxml.drawable import VertexBuffer
 
+
+current_game = SollumzGame.GTA
 
 def get_bone_by_vgroup(vgroups: bpy.types.VertexGroups, bones: list[bpy.types.Bone]):
     bone_ind_by_name: dict[str, int] = {
@@ -65,7 +69,9 @@ class VertexBufferBuilder:
 
         self._vert_inds = vert_inds
 
-    def build(self):
+    def build(self, game: SollumzGame = SollumzGame.GTA):
+        global current_game
+        current_game = game
         if not self.mesh.loop_triangles:
             self.mesh.calc_loop_triangles()
 
@@ -81,12 +87,22 @@ class VertexBufferBuilder:
         mesh_attrs["Position"] = self._get_positions()
 
         if self._has_weights:
-            blend_weights, blend_indices = self._get_weights_indices()
+            
+            data = self._get_weights_indices()
 
-            mesh_attrs["BlendWeights"] = blend_weights
-            mesh_attrs["BlendIndices"] = blend_indices
+            mesh_attrs["BlendWeights"] = data[0]
+            mesh_attrs["BlendIndices"] = data[1]
+            if current_game == SollumzGame.RDR:
+                mesh_attrs["BlendWeights2"] = data[2]
+                mesh_attrs["BlendIndices2"] = data[3]
 
         mesh_attrs["Normal"] = self._get_normals()
+
+        mesh_attrs["Tangent"] = self._get_tangents()
+
+        if current_game == SollumzGame.RDR:
+            mesh_attrs["Tangent1"] = mesh_attrs["Tangent"].copy()
+            mesh_attrs["Tangent2"] = mesh_attrs["Tangent"].copy()
 
         colors = self._get_colors()
 
@@ -98,16 +114,24 @@ class VertexBufferBuilder:
         for i, uv in enumerate(uvs):
             mesh_attrs[f"TexCoord{i}"] = uv
 
-        mesh_attrs["Tangent"] = self._get_tangents()
-
         return mesh_attrs
 
     def _structured_array_from_attrs(self, mesh_attrs: dict[str, NDArray]):
         """Combine ``mesh_attrs`` into single structured array."""
         # Data type for vertex data structured array
-        struct_dtype = [VertexBuffer.VERT_ATTR_DTYPES[attr_name]
+        if current_game == SollumzGame.GTA:
+            struct_dtype = [VertexBuffer.VERT_ATTR_DTYPES[attr_name]
                         for attr_name in mesh_attrs]
-
+        elif current_game == SollumzGame.RDR:
+            struct_dtype = []
+            for attr_name in mesh_attrs:
+                for val_list in VERT_ATTR_DTYPES.values():
+                    if val_list[0] in attr_name:
+                        item = val_list.copy()
+                        item[0] = attr_name
+                        item = tuple(item)
+                        struct_dtype.append(item)
+                        break
         vertex_arr = np.empty(len(self._vert_inds), dtype=struct_dtype)
 
         for attr_name, arr in mesh_attrs.items():
@@ -135,21 +159,34 @@ class VertexBufferBuilder:
         ind_arr = np.zeros((num_verts, 4), dtype=np.uint32)
         weights_arr = np.zeros((num_verts, 4), dtype=np.float32)
 
+        ind_arr2 = np.zeros((num_verts, 4), dtype=np.uint32)
+        weights_arr2 = np.zeros((num_verts, 4), dtype=np.float32)
+
         for i, vert in enumerate(self.mesh.vertices):
             for j, grp in enumerate(vert.groups):
-                if j > 3:
+                if j < 4:
+                    weights_arr[i][j] = grp.weight
+                    ind_arr[i][j] = bone_by_vgroup[grp.group]
+                elif j >= 4 and j < 8:
+                    weights_arr2[i][j] = grp.weight
+                    ind_arr2[i][j] = bone_by_vgroup[grp.group]
+                else:
                     break
 
-                weights_arr[i][j] = grp.weight
-                ind_arr[i][j] = bone_by_vgroup[grp.group]
-
         weights_arr = self._normalize_weights(weights_arr)
+        weights_arr2 = self._normalize_weights(weights_arr2)
+
         weights_arr, ind_arr = self._sort_weights_inds(weights_arr, ind_arr)
+        weights_arr2, ind_arr2 = self._sort_weights_inds(weights_arr2, ind_arr2)
 
         weights_arr = self._convert_to_int_range(weights_arr)
+        weights_arr2 = self._convert_to_int_range(weights_arr2)
 
         # Return on loop domain
-        return weights_arr[self._vert_inds], ind_arr[self._vert_inds]
+        if current_game == SollumzGame.GTA:
+            return [weights_arr[self._vert_inds], ind_arr[self._vert_inds]]
+        elif current_game == SollumzGame.RDR:
+            return [weights_arr[self._vert_inds], ind_arr[self._vert_inds], weights_arr2[self._vert_inds], ind_arr2[self._vert_inds]]
 
     def _sort_weights_inds(self, weights_arr: NDArray[np.float32], ind_arr: NDArray[np.uint32]):
         """Sort BlendWeights and BlendIndices."""
@@ -187,8 +224,9 @@ class VertexBufferBuilder:
                     not attr.name.startswith("."))
 
         color_attrs = [attr for attr in self.mesh.color_attributes if _is_valid_color_attr(attr)]
-        # Maximum of 2 color attributes for GTAV shaders
-        color_attrs = color_attrs[:2]
+        if current_game == SollumzGame.GTA:
+            # Maximum of 2 color attributes for GTAV shaders
+            color_attrs = color_attrs[:2]
 
         # Always have at least 1 color layer
         if len(color_attrs) == 0:
@@ -241,5 +279,7 @@ class VertexBufferBuilder:
 
         tangents = np.reshape(tangents, (num_loops, 3))
         bitangent_signs = np.reshape(bitangent_signs, (-1, 1))
-
-        return np.concatenate((tangents, bitangent_signs), axis=1)
+        if current_game == SollumzGame.GTA:
+            return np.concatenate((tangents, bitangent_signs), axis=1)
+        elif current_game == SollumzGame.RDR:
+            return tangents

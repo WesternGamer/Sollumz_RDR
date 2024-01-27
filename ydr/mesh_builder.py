@@ -1,3 +1,4 @@
+from Sollumz.sollumz_properties import SollumzGame
 import bpy
 import numpy as np
 from numpy.typing import NDArray
@@ -31,7 +32,7 @@ class MeshBuilder:
         self._has_colors = any(
             "Colour" in name for name in vertex_arr.dtype.names)
 
-    def build(self):
+    def build(self, game: str):
         mesh = bpy.data.meshes.new(self.name)
         vert_pos = self.vertex_arr["Position"]
         faces = self.ind_arr.reshape((int(self.ind_arr.size / 3), 3))
@@ -46,7 +47,7 @@ class MeshBuilder:
         self.create_mesh_materials(mesh)
 
         if self._has_normals:
-            self.set_mesh_normals(mesh)
+            self.set_mesh_normals(mesh, game)
 
         if self._has_uvs:
             self.set_mesh_uvs(mesh)
@@ -73,11 +74,15 @@ class MeshBuilder:
         mesh.attributes["material_index"].data.foreach_set(
             "value", model_mat_inds[self.mat_inds])
 
-    def set_mesh_normals(self, mesh: bpy.types.Mesh):
+    def set_mesh_normals(self, mesh: bpy.types.Mesh, game: str):
         mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
 
-        normals_normalized = [Vector(n).normalized()
-                              for n in self.vertex_arr["Normal"]]
+        normals_normalized = []
+        for n in self.vertex_arr["Normal"]:
+            # Normalized normal vector is multiplied by -1 to invert normal due to CodeX bug
+            n = Vector(n).normalized()
+            normals_normalized.append(n)
+
         mesh.normals_split_custom_set_from_vertices(normals_normalized)
 
         mesh.use_auto_smooth = True
