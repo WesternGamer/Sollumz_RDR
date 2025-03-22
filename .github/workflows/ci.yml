@@ -83,8 +83,8 @@ jobs:
           $BLENDER = get-content _blender-executable-path.txt
           $BLENDER_RELEASE_VERSION = python -c "print('.'.join('${{ matrix.blender-version }}'.split('.')[:2]))" # extract first two version numbers
           New-Item -ItemType Directory -Path "$env:APPDATA\Blender Foundation\Blender\$BLENDER_RELEASE_VERSION\scripts\addons" -Force
-          New-Item -ItemType SymbolicLink -Path "$env:APPDATA\Blender Foundation\Blender\$BLENDER_RELEASE_VERSION\scripts\addons" -Name Sollumz -Target $(Get-Location)
-          & "$BLENDER" -b --python-expr "import bpy; bpy.ops.preferences.addon_enable(module='Sollumz'); bpy.ops.wm.save_userpref()"
+          New-Item -ItemType SymbolicLink -Path "$env:APPDATA\Blender Foundation\Blender\$BLENDER_RELEASE_VERSION\scripts\addons" -Name Sollumz_RDR -Target $(Get-Location)
+          & "$BLENDER" -b --python-expr "import bpy; bpy.ops.preferences.addon_enable(module='Sollumz_RDR'); bpy.ops.wm.save_userpref()"
 
       - name: Run Tests
         run: |

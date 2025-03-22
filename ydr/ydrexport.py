@@ -290,11 +290,13 @@ def set_model_xml_properties(model_obj: bpy.types.Object, lod_level: LODLevel,bo
             model_xml.flags = 1  # skin flag, same meaning as has_skin
             model_xml.matrix_count = len(bones)
     elif current_game == SollumzGame.RDR:
+        model_xml.flags = 0
         model_xml.has_skin = True if bones and model_obj.vertex_groups else False
-        model_xml.flags = model_props.flags
+        if model_xml.has_skin:
+            model_xml.flags = 1
 
 
-def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.Material], bones: Optional[list[bpy.types.Bone]] = None, vertex_groups: Optional[list[bpy.types.VertexGroup]] = None) -> list[Geometry]:
+def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.Material], bones: Optional[list[bpy.types.Bone]] = None, vertex_groups: Optional[list[bpy.types.VertexGroup]] = None, parent_obj: Optional[bpy.types.Object] = None) -> list[Geometry]:
     is_cable = is_cable_mesh(mesh_eval)
     if len(mesh_eval.loops) == 0 and not is_cable: # cable mesh don't have faces, so no loops either
         logger.warning(f"Drawable Model '{mesh_eval.original.name}' has no Geometry! Skipping...")

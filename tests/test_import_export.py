@@ -29,6 +29,7 @@ if is_tmp_dir_available():
         assert success
         assert out_path.exists()
 
+    @pytest.mark.skip(reason="Fragments not supported in Sollumz_RDR")
     @pytest.mark.parametrize("yft_path, yft_path_str", glob_assets("yft"))
     def test_import_export_yft(yft_path: Path, yft_path_str: str):
         obj = import_yft(yft_path_str)

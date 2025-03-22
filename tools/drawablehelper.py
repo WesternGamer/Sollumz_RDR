@@ -49,7 +49,7 @@ class MaterialConverter:
         for i in range(min(src_count, dst_count)):
             dst_node.set(i, src_node.get(i))
 
-    def convert_shader_to_shader(self, shader_name: str, game: SollumType):
+    def convert_shader_to_shader(self, shader_name: str, game: SollumType = SollumzGame.GTA):
         shader = ShaderManager.find_shader(shader_name, game)
         assert shader is not None
 
@@ -165,7 +165,7 @@ class MaterialConverter:
 
         return "default.sps"
 
-    def convert(self, shader_name: str, game: SollumzGame) -> bpy.types.Material:
+    def convert(self, shader_name: str, game: SollumzGame = SollumzGame.GTA) -> bpy.types.Material:
         """Convert the material to a Sollumz material of the provided shader name."""
         self._create_new_material(shader_name, game)
 

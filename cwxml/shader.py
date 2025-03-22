@@ -533,7 +533,7 @@ class ShaderManager:
         return shader
 
     @staticmethod
-    def find_shader_base_name(filename: str, game) -> Optional[str]:
+    def find_shader_base_name(filename: str, game: SollumzGame = SollumzGame.GTA) -> Optional[str]:
         shader = ShaderManager.find_shader(filename, game)
         if shader is None:
             return None
