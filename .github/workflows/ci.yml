@@ -17,17 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-<<<<<<< HEAD
-          - blender-version: '4.0.1'
-=======
           - blender-version: '4.0.2'
->>>>>>> upstream
             python-version: '3.10'
             pytest-version: '7.2.0'
             pytest-blender-version: '3.0.5'
 
-<<<<<<< HEAD
-=======
           - blender-version: '4.1.1'
             python-version: '3.11'
             pytest-version: '7.2.0'
@@ -43,7 +37,6 @@ jobs:
             pytest-version: '7.2.0'
             pytest-blender-version: '3.0.5'
 
->>>>>>> upstream
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}
@@ -99,8 +92,6 @@ jobs:
           $BLENDER_PYTHON = get-content _blender-python-executable-path.txt
           $env:SOLLUMZ_TEST_TMP_DIR = $(mkdir _test_tmp)
           & "$BLENDER_PYTHON" -m pytest -svv --ignore _blender --ignore _test_tmp --blender-executable "$BLENDER"
-<<<<<<< HEAD
-=======
 
   trigger-extensions-repo-deploy:
     if: github.ref == 'refs/heads/main'
@@ -115,4 +106,3 @@ jobs:
             -H "Accept: application/vnd.github+json" `
             -H "Authorization: Bearer $env:EXTENSIONS_REPO_TRIGGER_DEPLOY_PAT" `
             -d '{"event_type":"trigger_deploy"}'
->>>>>>> upstream
