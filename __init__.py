@@ -13,9 +13,9 @@
 
 
 bl_info = {
-    "name": "Sollumz-RDR",
+    "name": "Sollumz RDR",
     "author": "Skylumz, Colton and alexguirre",
-    "description": "Red Dead Redemption 2 modding suite for Blender",
+    "description": "Experimental fork with Red Dead Redemption 2 support",
     "blender": (4, 0, 0),
     "version": (2, 6, 1),
     "category": "Import-Export",

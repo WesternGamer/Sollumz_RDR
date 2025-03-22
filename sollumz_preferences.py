@@ -21,7 +21,7 @@ from typing import Any
 from configparser import ConfigParser
 from typing import Optional
 
-PREFS_FILE_NAME = "sollumz_prefs.ini"
+PREFS_FILE_NAME = "sollumz_rdr_prefs.ini"
 
 
 def _save_preferences_on_update(self, context):
@@ -601,7 +601,7 @@ def get_prefs_path():
 
 
 def get_config_directory_path() -> str:
-    return bpy.utils.user_resource(resource_type="CONFIG", path="sollumz", create=True)
+    return bpy.utils.user_resource(resource_type="CONFIG", path="sollumz_rdr", create=True)
 
 
 def register():

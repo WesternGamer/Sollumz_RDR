@@ -1,10 +1,10 @@
 schema_version = "1.0.0"
 
-id = "sollumz_dev"
-version = "2.6.1-dev+$Format:%h$"
-name = "Sollumz (Development)"
-tagline = "Grand Theft Auto V modding suite for Blender"
-maintainer = "alexguirre <alexguirre.aa@gmail.com>"
+id = "sollumz_rdr_dev"
+version = "2.6.1-rdr_dev+$Format:%h$"
+name = "Sollumz RDR (Development)"
+tagline = "Experimental fork with Red Dead Redemption 2 support"
+maintainer = "ultrahacx, alexguirre <alexguirre.aa@gmail.com>"
 type = "add-on"
 
 website = "https://docs.sollumz.org"
