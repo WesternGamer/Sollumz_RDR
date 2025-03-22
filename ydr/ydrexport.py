@@ -40,6 +40,14 @@ from ..tools import jenkhash
 from ..tools.meshhelper import (
     get_bound_center_from_bounds,
     get_sphere_radius,
+    get_mesh_used_colors_indices,
+    get_mesh_used_texcoords_indices,
+    get_used_colors,
+    get_used_texcoords,
+    get_uv_map_name,
+    get_color_attr_name,
+    get_normal_required,
+    get_tangent_required,
 )
 from ..tools.utils import get_filename, get_max_vector_list, get_min_vector_list
 from ..shared.shader_nodes import SzShaderNodeParameter
@@ -57,6 +65,8 @@ from ..ybn.ybnexport import create_composite_xml, create_bound_xml
 from .properties import get_model_properties
 from .render_bucket import RenderBucket
 from .vertex_buffer_builder import VertexBufferBuilder, dedupe_and_get_indices, remove_arr_field, remove_unused_colors, get_bone_by_vgroup, remove_unused_uvs
+from .cable_vertex_buffer_builder import CableVertexBufferBuilder
+from .cable import is_cable_mesh
 from .lights import create_xml_lights
 from ..cwxml.shader import ShaderManager, ShaderDef, ShaderParameterCBufferDef, ShaderParameterFloatVectorDef, ShaderParameterSamplerDef, ShaderParameterType
 
@@ -69,15 +79,14 @@ current_game = SollumzGame.GTA
 def export_ydr(drawable_obj: bpy.types.Object, filepath: str) -> bool:
     export_settings = get_export_settings()
 
-    drawable_xml = create_drawable_xml(
-        drawable_obj, auto_calc_inertia=export_settings.auto_calculate_inertia, auto_calc_volume=export_settings.auto_calculate_volume, apply_transforms=export_settings.apply_transforms)
+    drawable_xml = create_drawable_xml(drawable_obj, apply_transforms=export_settings.apply_transforms)
     drawable_xml.write_xml(filepath)
 
     write_embedded_textures(drawable_obj, filepath)
     return True
 
 
-def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[bpy.types.Object] = None, materials: Optional[list[bpy.types.Material]] = None, auto_calc_volume: bool = False, auto_calc_inertia: bool = False, apply_transforms: bool = False):
+def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[bpy.types.Object] = None, materials: Optional[list[bpy.types.Material]] = None, apply_transforms: bool = False):
     """Create a ``Drawable`` cwxml object. Optionally specify an external ``armature_obj`` if ``drawable_obj`` is not an armature."""
     global current_game
     current_game = drawable_obj.sollum_game_type
@@ -88,7 +97,7 @@ def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[b
     elif current_game == SollumzGame.GTA:
         tag_name = "Drawable"
     drawable_xml = Drawable(tag_name)
-    drawable_xml.matrix = None
+    drawable_xml.frag_bound_matrix = None
 
     if current_game == SollumzGame.GTA:
         drawable_xml.name = remove_number_suffix(drawable_obj.name.lower())
@@ -132,13 +141,12 @@ def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[b
     create_model_xmls(drawable_xml, drawable_obj, materials, bones)
 
     if current_game == SollumzGame.GTA:
-        drawable_xml.lights = create_xml_lights(drawable_obj, armature_obj)
+        drawable_xml.lights = create_xml_lights(drawable_obj)
 
     set_drawable_xml_flags(drawable_xml)
     set_drawable_xml_extents(drawable_xml)
 
-    create_embedded_collision_xmls(
-        drawable_obj, drawable_xml, auto_calc_volume, auto_calc_inertia)
+    create_embedded_collision_xmls(drawable_obj, drawable_xml)
 
     if armature_obj is not None:
         armature_obj.data.pose_position = original_pose
@@ -241,6 +249,8 @@ def create_model_xml(model_obj: bpy.types.Object, lod_level: LODLevel, materials
 
     model_xml.bone_index = get_model_bone_index(model_obj)
 
+    obj_eval.to_mesh_clear()
+
     return model_xml
 
 
@@ -273,21 +283,21 @@ def set_model_xml_properties(model_obj: bpy.types.Object, lod_level: LODLevel,bo
     model_props = get_model_properties(model_obj, lod_level)
     if current_game == SollumzGame.GTA:
         model_xml.render_mask = model_props.render_mask
+        model_xml.flags = 0
         model_xml.matrix_count = 0
         model_xml.has_skin = 1 if bones and model_obj.vertex_groups else 0
+        if model_xml.has_skin:
+            model_xml.flags = 1  # skin flag, same meaning as has_skin
+            model_xml.matrix_count = len(bones)
     elif current_game == SollumzGame.RDR:
         model_xml.has_skin = True if bones and model_obj.vertex_groups else False
-    model_xml.flags = model_props.flags
-    
-    if model_xml.has_skin:
-        model_xml.flags = 1  # skin flag, same meaning as has_skin
-        model_xml.matrix_count = len(bones)
+        model_xml.flags = model_props.flags
 
 
-def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.Material], bones: Optional[list[bpy.types.Bone]] = None, vertex_groups: Optional[list[bpy.types.VertexGroup]] = None, parent_obj=None) -> list[Geometry]:
-    if len(mesh_eval.loops) == 0:
-        logger.warning(
-            f"Drawable Model '{mesh_eval.original.name}' has no Geometry! Skipping...")
+def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.Material], bones: Optional[list[bpy.types.Bone]] = None, vertex_groups: Optional[list[bpy.types.VertexGroup]] = None) -> list[Geometry]:
+    is_cable = is_cable_mesh(mesh_eval)
+    if len(mesh_eval.loops) == 0 and not is_cable: # cable mesh don't have faces, so no loops either
+        logger.warning(f"Drawable Model '{mesh_eval.original.name}' has no Geometry! Skipping...")
         return []
 
     if not mesh_eval.materials:
@@ -295,12 +305,68 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
             f"Could not create geometries for Drawable Model '{mesh_eval.original.name}': Mesh has no Sollumz materials!")
         return []
 
+    if is_cable:
+        cable_total_vert_buffer, cable_vert_materials = CableVertexBufferBuilder(mesh_eval).build()
+        cable_geometries = []
+        for cable_material_index in range(len(mesh_eval.materials)):
+            cable_vert_buffer = cable_total_vert_buffer[cable_vert_materials == cable_material_index]
+            cable_vert_buffer, cable_ind_buffer = dedupe_and_get_indices(cable_vert_buffer)
+
+            cable_material = mesh_eval.materials[cable_material_index].original
+            cable_material_index_in_drawable = materials.index(cable_material)
+
+            geom_xml = Geometry()
+            geom_xml.bounding_box_max, geom_xml.bounding_box_min = get_geom_extents(cable_vert_buffer["Position"])
+            geom_xml.shader_index = cable_material_index_in_drawable
+            geom_xml.vertex_buffer.data = cable_vert_buffer
+            geom_xml.index_buffer.data = cable_ind_buffer
+            cable_geometries.append(geom_xml)
+
+        return cable_geometries
+
+    # Validate UV maps and color attributes
+    texcoords = [(t, get_uv_map_name(t)) for t in get_mesh_used_texcoords_indices(mesh_eval)]
+    texcoords_missing = [(t, name) for t, name in texcoords if name not in mesh_eval.uv_layers]
+    if texcoords_missing:
+        texcoords_missing_str = ", ".join(name for _, name in texcoords_missing)
+        logger.warning(
+            f"Mesh '{mesh_eval.name}' is missing UV maps used by Sollumz shaders: {texcoords_missing_str}. "
+            "Please add them to avoid rendering issues in-game."
+        )
+
+    colors = [(c, get_color_attr_name(c)) for c in get_mesh_used_colors_indices(mesh_eval)]
+    colors_missing = [(c, name) for c, name in colors if name not in mesh_eval.color_attributes]
+    if colors_missing:
+        colors_missing_str = ", ".join(c[1] for c in colors_missing)
+        logger.warning(
+            f"Mesh '{mesh_eval.name}' is missing color attributes used by Sollumz shaders: {colors_missing_str}. "
+            "Please add them to avoid rendering issues in-game."
+        )
+
+    colors_incorrect_format = [
+        (c, name) for c, name in colors
+        if (attr := mesh_eval.color_attributes.get(name, None)) and \
+           (attr.domain != "CORNER" or attr.data_type != "BYTE_COLOR")
+    ]
+    if colors_incorrect_format:
+        colors_incorrect_format_str = ", ".join(name for _, name in colors_incorrect_format)
+        logger.warning(
+            f"Mesh '{mesh_eval.name}' has color attributes with the incorrect format: {colors_incorrect_format_str}. "
+            "Their format must be 'Face Corner ▶ Byte Color'. Please convert them to avoid rendering issues in-game."
+        )
+
+    del texcoords
+    del texcoords_missing
+    del colors
+    del colors_missing
+    del colors_incorrect_format
+
+
     loop_inds_by_mat = get_loop_inds_by_material(mesh_eval, materials)
 
     geometries: list[Geometry] = []
 
-    bone_by_vgroup = get_bone_by_vgroup(
-        vertex_groups, bones) if bones and vertex_groups else None
+    bone_by_vgroup = get_bone_by_vgroup(vertex_groups, bones) if bones and vertex_groups else None
 
     total_vert_buffer = VertexBufferBuilder(mesh_eval, bone_by_vgroup).build(current_game)
     shader.current_game = current_game
@@ -433,51 +499,11 @@ def get_loop_inds_by_material(mesh: bpy.types.Mesh, drawable_mats: list[bpy.type
 
         loop_indices = all_loop_inds[tri_loop_inds]
 
+        if shader_index in loop_inds_by_mat:
+            logger.warning(f"Shader_index already in list, some geometry will be lost! This is most likely caused by a duplicate material for {mat.name} in {mesh.name}")
         loop_inds_by_mat[shader_index] = loop_indices
 
     return loop_inds_by_mat
-
-
-def get_tangent_required(material: bpy.types.Material):
-    shader_name = material.shader_properties.filename
-
-    shader = ShaderManager.find_shader(shader_name, current_game)
-    if shader is None:
-        return False
-
-    return shader.required_tangent
-
-
-def get_used_texcoords(material: bpy.types.Material) -> set[str]:
-    """Get TexCoords that the material's shader uses"""
-    shader_name = material.shader_properties.filename
-
-    shader = ShaderManager.find_shader(shader_name)
-    if shader is None:
-        return {"TexCoord0"}
-
-    return shader.used_texcoords
-
-
-def get_used_colors(material: bpy.types.Material) -> set[str]:
-    """Get Colours that the material's shader uses"""
-    shader_name = material.shader_properties.filename
-
-    shader = ShaderManager.find_shader(shader_name)
-    if shader is None:
-        return set()
-
-    return shader.used_colors
-
-
-def get_normal_required(material: bpy.types.Material):
-    shader_name = material.shader_properties.filename
-
-    shader = ShaderManager.find_shader(shader_name)
-    if shader is None:
-        return False
-
-    return shader.required_normal
 
 
 def get_geom_extents(positions: NDArray[np.float32]):
@@ -786,27 +812,10 @@ def texture_from_img_node(node: bpy.types.ShaderNodeTexImage):
     if current_game == SollumzGame.GTA:
         texture.width = node.image.size[0]
         texture.height = node.image.size[1]
-
-        texture.usage = SOLLUMZ_UI_NAMES[node.texture_properties.usage]
-        texture.extra_flags = node.texture_properties.extra_flags
-        texture.format = SOLLUMZ_UI_NAMES[node.texture_properties.format]
-        texture.miplevels = 0
         texture.filename = texture.name + ".dds"
 
-        set_texture_flags(node, texture)
     elif current_game == SollumzGame.RDR:
         texture.flags = node.texture_properties.extra_flags
-    return texture
-
-
-def set_texture_flags(node: bpy.types.ShaderNodeTexImage, texture: Texture):
-    """Set the texture flags of ``texture`` from ``node.texture_flags``."""
-    for prop in dir(node.texture_flags):
-        value = getattr(node.texture_flags, prop)
-
-        if value == True:
-            texture.usage_flags.append(prop.upper())
-
     return texture
 
 
@@ -1075,31 +1084,45 @@ def set_drawable_xml_extents(drawable_xml: Drawable):
     bbmin = get_min_vector_list(mins)
     bbmax = get_max_vector_list(maxes)
 
-    drawable_xml.bounding_sphere_center = get_bound_center_from_bounds(
-        bbmin, bbmax)
-    drawable_xml.bounding_sphere_radius = get_sphere_radius(
-        bbmax, drawable_xml.bounding_sphere_center)
+    drawable_xml.bounding_sphere_center = get_bound_center_from_bounds(bbmin, bbmax)
+    drawable_xml.bounding_sphere_radius = get_sphere_radius(bbmin, bbmax)
     drawable_xml.bounding_box_min = bbmin
     drawable_xml.bounding_box_max = bbmax
 
 
-def create_embedded_collision_xmls(drawable_obj: bpy.types.Object, drawable_xml: Drawable, auto_calc_volume: bool = False, auto_calc_inertia: bool = False):
-    for child in drawable_obj.children:
-        bound_xml = None
-        ybnexport.current_game = current_game
-        if child.sollum_type == SollumType.BOUND_COMPOSITE:
-            bound_xml = create_composite_xml(
-                child, auto_calc_inertia, auto_calc_volume, embedded_col=True)
-        elif child.sollum_type in BOUND_TYPES:
-            bound_xml = create_bound_xml(
-                child, auto_calc_inertia, auto_calc_volume)
+def create_embedded_collision_xmls(drawable_obj: bpy.types.Object, drawable_xml: Drawable):
+    drawable_xml.bounds = None
+    bound_objs = [
+        child for child in drawable_obj.children
+        if child.sollum_type == SollumType.BOUND_COMPOSITE or child.sollum_type in BOUND_TYPES
+    ]
+    if not bound_objs:
+        return
 
-            if current_game == SollumzGame.GTA and not bound_xml.composite_transform.is_identity:
-                logger.warning(
-                    f"Embedded bound '{child.name}' has transforms (location, rotation, scale) but is not parented to a Bound Composite. Parent the collision to a Bound Composite in order for the transforms to work in-game.")
+    bound_obj = bound_objs[0]
+    if len(bound_objs) > 1:
+        other_bound_objs = bound_objs[1:]
+        other_bound_objs_names = [f"'{o.name}'" for o in other_bound_objs]
+        other_bound_objs_names = ", ".join(other_bound_objs_names)
+        logger.warning(
+            f"Drawable '{drawable_obj.name}' has multiple root embedded bounds! "
+            f"Only a single root bound is supported. Use a Bound Composite if you need multiple bounds.\n"
+            f"Only '{bound_obj.name}' will be exported. The following bounds will be ignored: {other_bound_objs_names}."
+        )
 
-        if bound_xml is not None:
-            drawable_xml.bounds.append(bound_xml)
+    bound_xml = None
+    if bound_obj.sollum_type == SollumType.BOUND_COMPOSITE:
+        bound_xml = create_composite_xml(bound_obj)
+    elif bound_obj.sollum_type in BOUND_TYPES:
+        bound_xml = create_bound_xml(bound_obj, is_root=True)
+
+        if not bound_xml.composite_transform.is_identity:
+            logger.warning(
+                f"Embedded bound '{bound_obj.name}' has transforms (rotation, scale) but is not parented to a Bound "
+                f"Composite. Parent the collision to a Bound Composite in order for the transforms to work in-game."
+            )
+
+    drawable_xml.bounds = bound_xml
 
 
 def set_drawable_xml_properties(drawable_obj: bpy.types.Object, drawable_xml: Drawable):
@@ -1221,8 +1244,8 @@ def get_shaders_from_blender(materials):
             param = None
 
             if isinstance(node, bpy.types.ShaderNodeTexImage):
-                if node.name == "Extra":
-                    # Don't write extra material to xml
+                param_def = shader_def.parameter_map.get(node.name, None)
+                if not param_def:
                     continue
 
                 param = TextureShaderParameter()
@@ -1241,14 +1264,17 @@ def get_shaders_from_blender(materials):
                         else:
                             delattr(param, "flags")
             elif isinstance(node, SzShaderNodeParameter):
-                param_def = shader_def.parameter_map.get(node.name)
+                param_def = shader_def.parameter_map.get(node.name, None)
 
                 if current_game == SollumzGame.RDR:
                     for key, value in shader_def.parameter_map.items():
-                        if jenkhash.GenerateCaseSensitive(node.name) == jenkhash.GenerateCaseSensitive(key):                       
+                        if jenkhash.GenerateCaseSensitive(node.name) == jenkhash.GenerateCaseSensitive(key):
                             param_def = value
                             break
-                    
+
+                if not param_def:
+                    continue
+
                 is_vector = isinstance(param_def, ShaderParameterFloatVectorDef) and not param_def.is_array
                 if is_vector:
                     param = VectorShaderParameter()

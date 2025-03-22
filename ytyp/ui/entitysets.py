@@ -1,25 +1,24 @@
 import bpy
-from ...tabbed_panels import TabPanel
-from ...sollumz_ui import BasicListHelper, draw_list_with_add_remove
 from ..properties.ytyp import ArchetypeType
-from ..utils import get_selected_archetype
-from .mlo import SOLLUMZ_PT_MLO_PANEL
+from ..utils import get_selected_ytyp, get_selected_archetype
+from .mlo import MloChildTabPanel
+from ...shared.multiselection import (
+    MultiSelectUIListMixin,
+    multiselect_ui_draw_list,
+)
+from ..operators import ytyp as ytyp_ops
 
 
-class SOLLUMZ_UL_ENTITY_SETS_LIST(BasicListHelper, bpy.types.UIList):
+class SOLLUMZ_UL_ENTITY_SETS_LIST(MultiSelectUIListMixin, bpy.types.UIList):
     bl_idname = "SOLLUMZ_UL_ENTITY_SETS_LIST"
-    item_icon = "ASSET_MANAGER"
+    default_item_icon = "ASSET_MANAGER"
+    multiselect_operator = ytyp_ops.SOLLUMZ_OT_archetype_select_mlo_entity_set.bl_idname
 
 
-class SOLLUMZ_PT_ENTITY_SETS_PANEL(TabPanel, bpy.types.Panel):
+class SOLLUMZ_PT_ENTITY_SETS_PANEL(MloChildTabPanel, bpy.types.Panel):
     bl_idname = "SOLLUMZ_PT_ENTITY_SETS_PANEL"
     bl_label = "Entity Sets"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"HIDE_HEADER"}
-    bl_parent_id = SOLLUMZ_PT_MLO_PANEL.bl_idname
 
-    parent_tab_panel = SOLLUMZ_PT_MLO_PANEL
     icon = "ASSET_MANAGER"
 
     bl_order = 5
@@ -31,11 +30,27 @@ class SOLLUMZ_PT_ENTITY_SETS_PANEL(TabPanel, bpy.types.Panel):
         return selected_archetype.type == ArchetypeType.MLO
 
     def draw(self, context):
+        # TODO(multiselect): think how we should manage disabling panels when multiple selection enabled
+        self.layout.enabled = not get_selected_ytyp(context).archetypes.has_multiple_selection
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False
         selected_archetype = get_selected_archetype(context)
 
-        layout.label(text="Entity Sets")
-        draw_list_with_add_remove(self.layout, "sollumz.createentityset", "sollumz.deleteentityset",
-                                  SOLLUMZ_UL_ENTITY_SETS_LIST.bl_idname, "", selected_archetype, "entity_sets", selected_archetype, "entity_set_index")
+        multiselect_ui_draw_list(
+            self.layout, selected_archetype.entity_sets,
+            "sollumz.createentityset", "sollumz.deleteentityset",
+            SOLLUMZ_UL_ENTITY_SETS_LIST, SOLLUMZ_MT_entity_sets_list_context_menu,
+            "tool_panel"
+        )
+
+
+class SOLLUMZ_MT_entity_sets_list_context_menu(bpy.types.Menu):
+    bl_label = "Entity Sets Specials"
+    bl_idname = "SOLLUMZ_MT_entity_sets_list_context_menu"
+
+    def draw(self, _context):
+        layout = self.layout
+        op = layout.operator(ytyp_ops.SOLLUMZ_OT_archetype_select_all_mlo_entity_set.bl_idname, text="Select All")
+        if (filter_opts := SOLLUMZ_UL_ENTITY_SETS_LIST.last_filter_options.get("entity_sets_tool_panel", None)):
+            filter_opts.apply_to_operator(op)

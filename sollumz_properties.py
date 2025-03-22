@@ -1,5 +1,6 @@
 import bpy
 from enum import Enum
+from typing import Sequence
 from .tools.utils import flag_list_to_int, flag_prop_to_list, int_to_bool_list
 
 
@@ -34,7 +35,6 @@ class SollumType(str, Enum):
     BOUND_POLY_CAPSULE = "sollumz_bound_poly_capsule"
     BOUND_POLY_CYLINDER = "sollumz_bound_poly_cylinder"
     BOUND_POLY_TRIANGLE = "sollumz_bound_poly_triangle"
-    BOUND_POLY_TRIANGLE2 = "sollumz_bound_poly_triangle2"
 
     NAVMESH = "sollumz_navmesh"
     NAVMESH_POLY_MESH = "sollumz_navmesh_mesh"
@@ -73,60 +73,21 @@ class MaterialType(str, Enum):
     SHATTER_MAP = "sollumz_material_shard"
 
 
-class TextureUsage(str, Enum):
-    UNKNOWN = "sollumz_unknown"
-    TINTPALETTE = "sollumz_tintpalette"
-    DEFAULT = "sollumz_default"
-    TERRAIN = "sollumz_terrain"
-    CLOUDDENSITY = "sollumz_clouddensity"
-    CLOUDNORMAL = "sollumz_cloudnormal"
-    CABLE = "sollumz_cable"
-    FENCE = "sollumz_fence"
-    ENVEFFECT = "sollumz_env.effect"
-    SCRIPT = "sollumz_script"
-    WATERFLOW = "sollumz_waterflow"
-    WATERFOAM = "sollumz_waterfoam"
-    WATERFOG = "sollumz_waterfog"
-    WATEROCEAN = "sollumz_waterocean"
-    WATER = "sollumz_water"
-    FOAMOPACITY = "sollumz_foamopacity"
-    FOAM = "sollumz_foam"
-    DIFFUSEDETAIL = "sollumz_diffusedetail"
-    DIFFUSEDARK = "sollumz_diffusedark"
-    DIFFUSEALPHAOPAQUE = "sollumz_diffuseaplhaopaque"
-    DETAIL = "sollumz_detail"
-    NORMAL = "sollumz_normal"
-    SPECULAR = "sollumz_specular"
-    EMISSIVE = "sollumz_emissive"
-    SKIPPROCESSING = "sollumz_skipprocessing"
-    DONTOPTIMIZE = "sollumz_dontoptimize"
-    TEST = "sollumz_test"
-    COUNT = "sollumz_count"
-    DIFFUSE = "sollumz_diffuse"
-
-
-class TextureFormat(str, Enum):
-    DXT1 = "sollumz_dxt1"
-    DXT3 = "sollumz_dxt3"
-    DXT5 = "sollumz_dxt5"
-    ATI1 = "sollumz_ati1"
-    ATI2 = "sollumz_ati2"
-    BC7 = "sollumz_bc7"
-    A1R5G5B5 = "sollumz_a1r5g5b5"
-    A1R8G8B8 = "sollumz_a1r8g8b8"
-    A8R8G8B8 = "sollumz_a8r8g8b8"
-    A8B8G8R8 = "sollumz_a8b8g8r8"
-    X8R8G8B8 = "sollumz_x8r8g8b8"
-    A8 = "sollumz_a8"
-    L8 = "sollumz_l8"
-
-
 class LODLevel(str, Enum):
+    VERYHIGH = "sollumz_veryhigh"
     HIGH = "sollumz_high"
     MEDIUM = "sollumz_medium"
     LOW = "sollumz_low"
     VERYLOW = "sollumz_verylow"
-    VERYHIGH = "sollumz_veryhigh"
+
+
+LODLevelEnumItems = (
+    (LODLevel.HIGH, "High", "", 0),
+    (LODLevel.MEDIUM, "Medium", "", 1),
+    (LODLevel.LOW, "Low", "", 2),
+    (LODLevel.VERYLOW, "Very Low", "", 3),
+    (LODLevel.VERYHIGH, "Very High", "", 4),
+)
 
 
 LODLevelEnumItems = (
@@ -203,13 +164,8 @@ class VehicleLightID(str, Enum):
     CUSTOM = "custom"
 
 
-class VehiclePaintLayer(str, Enum):
-    NOT_PAINTABLE = "sollumz_not_paintable"
-    PRIMARY = "sollumz_primary_color"
-    SECONDARY = "sollumz_secondary_color"
-    WHEEL = "sollumz_wheel_color"
-    INTERIOR_TRIM = "sollumz_interior_trim_color"
-    INTERIOR_DASH = "sollumz_interior_dash_color"
+MIN_VEHICLE_LIGHT_ID = 0
+MAX_VEHICLE_LIGHT_ID = 17
 
 
 class SollumzGame(str, Enum):
@@ -249,7 +205,6 @@ BOUND_SHAPE_TYPES = [
     SollumType.BOUND_POLY_CAPSULE,
     SollumType.BOUND_POLY_CYLINDER,
     SollumType.BOUND_POLY_TRIANGLE,
-    SollumType.BOUND_POLY_TRIANGLE2,
 ]
 
 BOUND_POLYGON_TYPES = [
@@ -258,7 +213,6 @@ BOUND_POLYGON_TYPES = [
     SollumType.BOUND_POLY_CAPSULE,
     SollumType.BOUND_POLY_CYLINDER,
     SollumType.BOUND_POLY_TRIANGLE,
-    SollumType.BOUND_POLY_TRIANGLE2,
 ]
 
 DRAWABLE_TYPES = [
@@ -298,7 +252,6 @@ SOLLUMZ_UI_NAMES = {
     SollumType.BOUND_POLY_CAPSULE: "Bound Poly Capsule",
     SollumType.BOUND_POLY_CYLINDER: "Bound Poly Cylinder",
     SollumType.BOUND_POLY_TRIANGLE: "Bound Poly Mesh",
-    SollumType.BOUND_POLY_TRIANGLE2: "Bound Poly Mesh Damaged",
 
     SollumType.FRAGMENT: "Fragment",
     SollumType.FRAGGROUP: "Fragment Group",
@@ -344,50 +297,6 @@ SOLLUMZ_UI_NAMES = {
     MaterialType.SHATTER_MAP: "Sollumz Shatter Map",
     MaterialType.SHADER_RDR: "Sollumz RDR Material",
     MaterialType.COLLISION_RDR: "Sollumz RDR Collision Material",
-
-    TextureUsage.UNKNOWN: "UNKNOWN",
-    TextureUsage.TINTPALETTE: "TINTPALETTE",
-    TextureUsage.DEFAULT: "DEFAULT",
-    TextureUsage.TERRAIN: "TERRAIN",
-    TextureUsage.CLOUDDENSITY: "CLOUDDENSITY",
-    TextureUsage.CLOUDNORMAL: "CLOUDNORMAL",
-    TextureUsage.CABLE: "CABLE",
-    TextureUsage.FENCE: "FENCE",
-    TextureUsage.ENVEFFECT: "ENV.EFFECT",
-    TextureUsage.SCRIPT: "SCRIPT",
-    TextureUsage.WATERFLOW: "WATERFLOW",
-    TextureUsage.WATERFOAM: "WATERFOAM",
-    TextureUsage.WATERFOG: "WATERFOG",
-    TextureUsage.WATEROCEAN: "WATEROCEAN",
-    TextureUsage.WATER: "WATER",
-    TextureUsage.FOAMOPACITY: "FOAMOPACITY",
-    TextureUsage.FOAM: "FOAM",
-    TextureUsage.DIFFUSEDETAIL: "DIFFUSEDETAIL",
-    TextureUsage.DIFFUSEDARK: "DIFFUSEDARK",
-    TextureUsage.DIFFUSEALPHAOPAQUE: "DIFFUSEALPHAOPAQUE",
-    TextureUsage.DETAIL: "DETAIL",
-    TextureUsage.NORMAL: "NORMAL",
-    TextureUsage.SPECULAR: "SPECULAR",
-    TextureUsage.EMISSIVE: "EMISSIVE",
-    TextureUsage.SKIPPROCESSING: "SKIPPROCESSING",
-    TextureUsage.DONTOPTIMIZE: "DONTOPTIMIZE",
-    TextureUsage.TEST: "TEST",
-    TextureUsage.COUNT: "COUNT",
-    TextureUsage.DIFFUSE: "DIFFUSE",
-
-    TextureFormat.DXT1: "D3DFMT_DXT1",
-    TextureFormat.DXT3: "D3DFMT_DXT3",
-    TextureFormat.DXT5: "D3DFMT_DXT5",
-    TextureFormat.ATI1: "D3DFMT_ATI1",
-    TextureFormat.ATI2: "D3DFMT_ATI2",
-    TextureFormat.BC7: "D3DFMT_BC7",
-    TextureFormat.A1R5G5B5: "D3DFMT_A1R5G5B5",
-    TextureFormat.A1R8G8B8: "D3DFMT_A1R8G8B8",
-    TextureFormat.A8R8G8B8: "D3DFMT_A8R8G8B8",
-    TextureFormat.A8B8G8R8: "D3DFMT_A8B8G8R8",
-    TextureFormat.X8R8G8B8: "D3DFMT_X8R8G8B8",
-    TextureFormat.A8: "D3DFMT_A8",
-    TextureFormat.L8: "D3DFMT_L8",
 
     LODLevel.VERYHIGH: "Very High",
     LODLevel.HIGH: "High",
@@ -453,12 +362,6 @@ SOLLUMZ_UI_NAMES = {
     VehicleLightID.EXTRA_REAR_LEFT: "Extra Rear Left (extralight_3)",
     VehicleLightID.EXTRA_REAR_RIGHT: "Extra Rear Right (extralight_4)",
 
-    VehiclePaintLayer.NOT_PAINTABLE: "Not Paintable",
-    VehiclePaintLayer.PRIMARY: "Primary",
-    VehiclePaintLayer.SECONDARY: "Secondary",
-    VehiclePaintLayer.WHEEL: "Wheel",
-    VehiclePaintLayer.INTERIOR_DASH: "Dashboard",
-    VehiclePaintLayer.INTERIOR_TRIM: "Interior Trim"
 }
 
 
@@ -478,6 +381,9 @@ def items_from_enums(*enums, exclude=None):
 
 
 class FlagPropertyGroup:
+    def get_flag_names(self) -> Sequence[str]:
+        return self.flag_names if self.flag_names else self.__annotations__.keys()
+
     def update_flags_total(self, context):
         # Ensure string can be converted to int
         try:
@@ -486,20 +392,24 @@ class FlagPropertyGroup:
             self.total = "0"
 
         flags = int_to_bool_list(int(self.total), size=self.size)
-        for index, flag_name in enumerate(self.__annotations__):
+        for index, flag_name in enumerate(self.get_flag_names()):
             if index >= self.size:
                 break
 
             self[flag_name] = flags[index]
 
     def update_flag(self, context):
-        flags = flag_prop_to_list(self.__class__, self, size=self.size)
+        flags = flag_prop_to_list(self.get_flag_names(), self, size=self.size)
         flags.pop()
         self.total = str(flag_list_to_int(flags))
 
+    # Can be set to a list of strings to override the flags used or their order, otherwise, use the annotations.
+    # Useful when the class annotations don't have all the flags (e.g. some flags are defined in base/mixin class)
+    flag_names = None
+
     size = 32
-    total: bpy.props.StringProperty(
-        name="Flags", update=update_flags_total, default="0")
+
+    total: bpy.props.StringProperty(name="Flags", update=update_flags_total, default="0")
 
 
 time_items = [("0", "12:00 AM", ""),
@@ -528,61 +438,36 @@ time_items = [("0", "12:00 AM", ""),
               ("23", "11:00 PM", "")]
 
 
-class TimeFlags(FlagPropertyGroup, bpy.types.PropertyGroup):
+class TimeFlagsMixin(FlagPropertyGroup):
     size = 24
-    hour1: bpy.props.BoolProperty(
-        name="12:00 AM - 1:00 AM", update=FlagPropertyGroup.update_flag)
-    hour2: bpy.props.BoolProperty(
-        name="1:00 AM - 2:00 AM", update=FlagPropertyGroup.update_flag)
-    hour3: bpy.props.BoolProperty(
-        name="2:00 AM - 3:00 AM", update=FlagPropertyGroup.update_flag)
-    hour4: bpy.props.BoolProperty(
-        name="3:00 AM - 4:00 AM", update=FlagPropertyGroup.update_flag)
-    hour5: bpy.props.BoolProperty(
-        name="4:00 AM - 5:00 AM", update=FlagPropertyGroup.update_flag)
-    hour6: bpy.props.BoolProperty(
-        name="5:00 AM - 6:00 AM", update=FlagPropertyGroup.update_flag)
-    hour7: bpy.props.BoolProperty(
-        name="6:00 AM - 7:00 AM", update=FlagPropertyGroup.update_flag)
-    hour8: bpy.props.BoolProperty(
-        name="7:00 AM - 8:00 AM", update=FlagPropertyGroup.update_flag)
-    hour9: bpy.props.BoolProperty(
-        name="8:00 AM - 9:00 AM", update=FlagPropertyGroup.update_flag)
-    hour10: bpy.props.BoolProperty(
-        name="9:00 AM - 10:00 AM", update=FlagPropertyGroup.update_flag)
-    hour11: bpy.props.BoolProperty(
-        name="10:00 AM - 11:00 AM", update=FlagPropertyGroup.update_flag)
-    hour12: bpy.props.BoolProperty(
-        name="11:00 AM - 12:00 PM", update=FlagPropertyGroup.update_flag)
-    hour13: bpy.props.BoolProperty(
-        name="12:00 PM - 1:00 PM", update=FlagPropertyGroup.update_flag)
-    hour14: bpy.props.BoolProperty(
-        name="1:00 PM - 2:00 PM", update=FlagPropertyGroup.update_flag)
-    hour15: bpy.props.BoolProperty(
-        name="2:00 PM - 3:00 PM", update=FlagPropertyGroup.update_flag)
-    hour16: bpy.props.BoolProperty(
-        name="3:00 PM - 4:00 PM", update=FlagPropertyGroup.update_flag)
-    hour17: bpy.props.BoolProperty(
-        name="4:00 PM - 5:00 PM", update=FlagPropertyGroup.update_flag)
-    hour18: bpy.props.BoolProperty(
-        name="5:00 PM - 6:00 PM", update=FlagPropertyGroup.update_flag)
-    hour19: bpy.props.BoolProperty(
-        name="6:00 PM - 7:00 PM", update=FlagPropertyGroup.update_flag)
-    hour20: bpy.props.BoolProperty(
-        name="7:00 PM - 8:00 PM", update=FlagPropertyGroup.update_flag)
-    hour21: bpy.props.BoolProperty(
-        name="8:00 PM - 9:00 PM", update=FlagPropertyGroup.update_flag)
-    hour22: bpy.props.BoolProperty(
-        name="9:00 PM - 10:00 PM", update=FlagPropertyGroup.update_flag)
-    hour23: bpy.props.BoolProperty(
-        name="10:00 PM - 11:00 PM", update=FlagPropertyGroup.update_flag)
-    hour24: bpy.props.BoolProperty(
-        name="11:00 PM - 12:00 AM", update=FlagPropertyGroup.update_flag)
+    flag_names = [f"hour{i + 1}" for i in range(0, 24)]
+    hour1: bpy.props.BoolProperty(name="12:00 AM - 1:00 AM", update=FlagPropertyGroup.update_flag)
+    hour2: bpy.props.BoolProperty(name="1:00 AM - 2:00 AM", update=FlagPropertyGroup.update_flag)
+    hour3: bpy.props.BoolProperty(name="2:00 AM - 3:00 AM", update=FlagPropertyGroup.update_flag)
+    hour4: bpy.props.BoolProperty(name="3:00 AM - 4:00 AM", update=FlagPropertyGroup.update_flag)
+    hour5: bpy.props.BoolProperty(name="4:00 AM - 5:00 AM", update=FlagPropertyGroup.update_flag)
+    hour6: bpy.props.BoolProperty(name="5:00 AM - 6:00 AM", update=FlagPropertyGroup.update_flag)
+    hour7: bpy.props.BoolProperty(name="6:00 AM - 7:00 AM", update=FlagPropertyGroup.update_flag)
+    hour8: bpy.props.BoolProperty(name="7:00 AM - 8:00 AM", update=FlagPropertyGroup.update_flag)
+    hour9: bpy.props.BoolProperty(name="8:00 AM - 9:00 AM", update=FlagPropertyGroup.update_flag)
+    hour10: bpy.props.BoolProperty(name="9:00 AM - 10:00 AM", update=FlagPropertyGroup.update_flag)
+    hour11: bpy.props.BoolProperty(name="10:00 AM - 11:00 AM", update=FlagPropertyGroup.update_flag)
+    hour12: bpy.props.BoolProperty(name="11:00 AM - 12:00 PM", update=FlagPropertyGroup.update_flag)
+    hour13: bpy.props.BoolProperty(name="12:00 PM - 1:00 PM", update=FlagPropertyGroup.update_flag)
+    hour14: bpy.props.BoolProperty(name="1:00 PM - 2:00 PM", update=FlagPropertyGroup.update_flag)
+    hour15: bpy.props.BoolProperty(name="2:00 PM - 3:00 PM", update=FlagPropertyGroup.update_flag)
+    hour16: bpy.props.BoolProperty(name="3:00 PM - 4:00 PM", update=FlagPropertyGroup.update_flag)
+    hour17: bpy.props.BoolProperty(name="4:00 PM - 5:00 PM", update=FlagPropertyGroup.update_flag)
+    hour18: bpy.props.BoolProperty(name="5:00 PM - 6:00 PM", update=FlagPropertyGroup.update_flag)
+    hour19: bpy.props.BoolProperty(name="6:00 PM - 7:00 PM", update=FlagPropertyGroup.update_flag)
+    hour20: bpy.props.BoolProperty(name="7:00 PM - 8:00 PM", update=FlagPropertyGroup.update_flag)
+    hour21: bpy.props.BoolProperty(name="8:00 PM - 9:00 PM", update=FlagPropertyGroup.update_flag)
+    hour22: bpy.props.BoolProperty(name="9:00 PM - 10:00 PM", update=FlagPropertyGroup.update_flag)
+    hour23: bpy.props.BoolProperty(name="10:00 PM - 11:00 PM", update=FlagPropertyGroup.update_flag)
+    hour24: bpy.props.BoolProperty(name="11:00 PM - 12:00 AM", update=FlagPropertyGroup.update_flag)
 
-    time_flags_start: bpy.props.EnumProperty(
-        items=time_items, name="Time Start")
-    time_flags_end: bpy.props.EnumProperty(
-        items=time_items, name="Time End")
+    time_flags_start: bpy.props.EnumProperty(items=time_items, name="Time Start")
+    time_flags_end: bpy.props.EnumProperty(items=time_items, name="Time End")
 
 
 class EntityProperties:
@@ -694,7 +579,7 @@ def register():
     bpy.types.Scene.vert_paint_color5 = bpy.props.FloatVectorProperty(
         name="Vert Color 5",
         subtype="COLOR_GAMMA",
-        default=(0.0, 1.0, 0.0, 1.0),
+        default=(1.0, 0.501961, 0.0, 1.0),
         min=0,
         max=1,
         size=4
@@ -703,7 +588,7 @@ def register():
     bpy.types.Scene.vert_paint_color6 = bpy.props.FloatVectorProperty(
         name="Vert Color 6",
         subtype="COLOR_GAMMA",
-        default=(1.0, 0.0, 0.0, 1.0),
+        default=(0.0, 0.0, 0.0, 0.0),
         min=0,
         max=1,
         size=4

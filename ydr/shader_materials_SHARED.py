@@ -14,7 +14,7 @@ from ..cwxml.shader import (
     ShaderParameterCBufferDef
 )
 
-from ..tools.meshhelper import get_uv_map_name
+from ..tools.meshhelper import get_uv_map_name, get_color_attr_name
 from ..shared.shader_nodes import SzShaderNodeParameter, SzShaderNodeParameterDisplayType
 
 
@@ -81,6 +81,31 @@ def group_image_texture_nodes(node_tree):
         node.location.y += group_offset
 
 
+def group_uv_map_nodes(node_tree):
+    uv_map_nodes = [node for node in node_tree.nodes if node.type == "UVMAP"]
+
+    if not uv_map_nodes:
+        return
+
+    uv_map_nodes.sort(key=lambda node: node.name, reverse=True)
+
+    avg_x = min([node.location.x for node in uv_map_nodes])
+
+    # adjust margin to change gap in between UV map nodes
+    margin = 120
+    current_y = min([node.location.y for node in uv_map_nodes]) - margin
+    for node in uv_map_nodes:
+        current_y += margin
+        node.location.x = avg_x
+        node.location.y = current_y
+
+    # how far to the left the UV map nodes are
+    group_offset = 900
+    for node in uv_map_nodes:
+        node.location.x -= group_offset
+        node.location.y += group_offset
+
+
 def get_loose_nodes(node_tree):
     loose_nodes = []
     for node in node_tree.nodes:
@@ -108,6 +133,7 @@ def organize_node_tree(b: ShaderBuilder):
     organize_node(mo)
     organize_loose_nodes(b.node_tree, 1000, 0)
     group_image_texture_nodes(b.node_tree)
+    group_uv_map_nodes(b.node_tree)
 
 
 def organize_node(node):
@@ -488,16 +514,90 @@ def create_decal_nodes(b: ShaderBuilder, texture, decalflag):
     trans = node_tree.nodes.new("ShaderNodeBsdfTransparent")
     links.new(texture.outputs["Color"], bsdf.inputs["Base Color"])
 
-    if decalflag == 0:
-        links.new(texture.outputs["Alpha"], mix.inputs["Fac"])
-    if decalflag == 1:
+    if decalflag == 0:  # cutout
+        # Handle alpha test logic for cutout shaders.
+        # TODO: alpha test nodes specific to cutout shaders without HardAlphaBlend
+        # - trees shaders have AlphaTest and AlphaScale parameters
+        # - grass_batch has gAlphaTest parameter
+        # - ped_fur? has cutout render bucket but no alpha test-related parameter afaict
+        if (
+            (hard_alpha_blend := try_get_node(node_tree, "HardAlphaBlend")) and
+            isinstance(hard_alpha_blend, SzShaderNodeParameter)
+        ):
+            # The HardAlphaBlend parameter is used to slightly smooth out the cutout edges.
+            # 1.0 = hard edges, 0.0 = softer edges (some transparency in the edges)
+            # Negative values invert the cutout but I don't think that's the intended use.
+            ALPHA_REF = 90.0 / 255.0
+            MIN_ALPHA_REF = 1.0 / 255.0
+            sub = node_tree.nodes.new("ShaderNodeMath")
+            sub.operation = "SUBTRACT"
+            sub.inputs[1].default_value = ALPHA_REF
+            div = node_tree.nodes.new("ShaderNodeMath")
+            div.operation = "DIVIDE"
+            div.inputs[1].default_value = (1.0 - ALPHA_REF) * 0.1
+            map_alpha_blend = node_tree.nodes.new("ShaderNodeMapRange")
+            map_alpha_blend.clamp = False
+            map_alpha_blend.inputs["From Min"].default_value = 0.0
+            map_alpha_blend.inputs["From Max"].default_value = 1.0
+            alpha_gt = node_tree.nodes.new("ShaderNodeMath")
+            alpha_gt.operation = "GREATER_THAN"
+            alpha_gt.inputs[1].default_value = MIN_ALPHA_REF
+            mul_alpha_test = node_tree.nodes.new("ShaderNodeMath")
+            mul_alpha_test.operation = "MULTIPLY"
+
+            links.new(texture.outputs["Alpha"], sub.inputs[0])
+            links.new(sub.outputs["Value"], div.inputs[0])
+            links.new(hard_alpha_blend.outputs["X"], map_alpha_blend.inputs["Value"])
+            links.new(texture.outputs["Alpha"], map_alpha_blend.inputs["To Min"])
+            links.new(div.outputs["Value"], map_alpha_blend.inputs["To Max"])
+            links.new(map_alpha_blend.outputs["Result"], alpha_gt.inputs[0])
+            links.new(map_alpha_blend.outputs["Result"], mul_alpha_test.inputs[0])
+            links.new(alpha_gt.outputs["Value"], mul_alpha_test.inputs[1])
+            links.new(mul_alpha_test.outputs["Value"], mix.inputs["Fac"])
+        else:
+            # Fallback to simple alpha test
+            # discard if alpha <= 0.5, else opaque
+            alpha_gt = node_tree.nodes.new("ShaderNodeMath")
+            alpha_gt.operation = "GREATER_THAN"
+            alpha_gt.inputs[1].default_value = 0.5
+            links.new(texture.outputs["Alpha"], alpha_gt.inputs[0])
+            links.new(alpha_gt.outputs["Value"], mix.inputs["Fac"])
+    elif decalflag == 1:
         vcs = node_tree.nodes.new("ShaderNodeVertexColor")
-        vcs.layer_name = "Color 1"  # set in create shader???
+        vcs.layer_name = get_color_attr_name(0)
         multi = node_tree.nodes.new("ShaderNodeMath")
         multi.operation = "MULTIPLY"
         links.new(vcs.outputs["Alpha"], multi.inputs[0])
         links.new(texture.outputs["Alpha"], multi.inputs[1])
         links.new(multi.outputs["Value"], mix.inputs["Fac"])
+    elif decalflag == 2:  # decal_dirt.sps
+        # Here, the diffuse sampler represents an alpha map. DirtDecalMask indicates which channels to consider. Actual
+        # color stored in the color0 attribute.
+        #   alpha = dot(diffuseColor, DirtDecalMask)
+        #   alpha *= color0.a
+        #   baseColor = color0.rgb
+        dirt_decal_mask_xyz = node_tree.nodes.new("ShaderNodeCombineXYZ")
+        dirt_decal_mask = node_tree.nodes["DirtDecalMask"]
+        dot_diffuse_mask = node_tree.nodes.new("ShaderNodeVectorMath")
+        dot_diffuse_mask.operation = "DOT_PRODUCT"
+        mult_alpha_color0a = node_tree.nodes.new("ShaderNodeMath")
+        mult_alpha_color0a.operation = "MULTIPLY"
+        color0_attr = node_tree.nodes.new("ShaderNodeVertexColor")
+        color0_attr.layer_name = get_color_attr_name(0)
+
+        links.new(dirt_decal_mask.outputs["X"], dirt_decal_mask_xyz.inputs["X"])
+        links.new(dirt_decal_mask.outputs["Y"], dirt_decal_mask_xyz.inputs["Y"])
+        links.new(dirt_decal_mask.outputs["Z"], dirt_decal_mask_xyz.inputs["Z"])
+
+        links.new(texture.outputs["Color"], dot_diffuse_mask.inputs[0])
+        links.new(dirt_decal_mask_xyz.outputs["Vector"], dot_diffuse_mask.inputs[1])
+
+        links.new(dot_diffuse_mask.outputs["Value"], mult_alpha_color0a.inputs[0])
+        links.new(color0_attr.outputs["Alpha"], mult_alpha_color0a.inputs[1])
+
+        links.new(mult_alpha_color0a.outputs["Value"], mix.inputs["Fac"])
+
+        links.new(color0_attr.outputs["Color"], bsdf.inputs["Base Color"])
 
     links.new(trans.outputs["BSDF"], mix.inputs[1])
     links.remove(bsdf.outputs["BSDF"].links[0])

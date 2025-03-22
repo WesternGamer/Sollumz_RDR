@@ -14,6 +14,7 @@ from ..cwxml.shader import ShaderManager
 
 from .. import logger
 
+
 class AnimationFlag(IntFlag):
     Default = 0
     RootMotion = 16
@@ -502,6 +503,32 @@ def setup_armature_for_animation(armature: bpy.types.Armature):
     armature_obj = get_data_obj(armature)
     armature_obj.rotation_mode = "QUATERNION"  # root rotation track uses rotation_quaternion
 
+    # Add Copy Rotation constraints to ped thigh roll bones
+    # The game calculates the thigh roll bones rotation at runtime using expressions (.yed) but as we don't currently support this, we use this workaround.
+    # Without this rotation, peds legs during animation playback look really deformed. Copying the thigh rotation isn't perfect, but it's better.
+    thigh_bones = (
+        ("RB_L_ThighRoll", "SKEL_L_Thigh"),
+        ("RB_R_ThighRoll", "SKEL_R_Thigh"),
+    )
+    for thigh_roll_bone, thigh_bone in thigh_bones:
+        if thigh_roll_bone not in armature.bones or thigh_bone not in armature.bones:
+            continue
+
+        # Check if the constraint already exists
+        thigh_roll_pose_bone = armature_obj.pose.bones[thigh_roll_bone]
+        has_constraint = any(
+            c.type == "COPY_ROTATION" and c.target == armature_obj and c.subtarget == thigh_bone
+            for c in thigh_roll_pose_bone.constraints
+        )
+        if has_constraint:
+            continue
+
+        # Add the constraint
+        constraint = thigh_roll_pose_bone.constraints.new("COPY_ROTATION")
+        constraint.name = "Copy Rotation from Thigh"
+        constraint.target = armature_obj
+        constraint.subtarget = thigh_bone
+
 
 def get_canonical_track_data_path(track: Track, bone_id: int):
     """
@@ -602,7 +629,14 @@ def get_id_and_track_from_track_data_path(
     if len(canon_data_path_parts) != 3:
         return None
 
-    id = int(canon_data_path_parts[1].removeprefix("#"))
+    if not canon_data_path_parts[1].startswith("#") or not canon_data_path_parts[2].startswith("]."):
+        return None
+
+    id_str = canon_data_path_parts[1].removeprefix("#")
+    if not id_str.isdecimal():
+        return None
+
+    id = int(id_str)
 
     track_str = canon_data_path_parts[2].removeprefix("].")
     if track_str == "location":
@@ -645,6 +679,21 @@ def retarget_animation(animation_obj: bpy.types.Object, old_target_id: bpy.types
     camera_rotations_to_transform = {}
 
     action = animation_obj.animation_properties.action
+
+    # If we have an armature, rename groups named with the bone ID after the bone in the armature
+    if new_bone_map is not None:
+        for group in action.groups:
+            name = group.name
+            if not name.startswith("#") or not name[1:].isnumeric():
+                continue
+
+            bone_id = int(name[1:])
+            bone = new_bone_map.get(bone_id, None)
+            if bone is None:
+                continue
+
+            group.name = bone.name
+
     for fcurve in action.fcurves:
         # TODO: can we somehow store the track ID in the F-Curve to avoid parsing the data paths?
         data_path = fcurve.data_path
@@ -798,6 +847,9 @@ def get_action_duration_secs(action: bpy.types.Action) -> float:
 
 def get_action_export_frame_count(action: bpy.types.Action) -> int:
     """Gets how many frames should be exported for the given action."""
-    max_num_keyframes = max(len(fc.keyframe_points) for fc in action.fcurves)
-    num_frames = math.ceil(get_action_duration_frames(action) + 1)
+    max_num_keyframes = max((len(fc.keyframe_points) for fc in action.fcurves), default=0)
+    duration_in_frames = get_action_duration_frames(action)
+    if max_num_keyframes == 0 or duration_in_frames == 0.0:
+        return 0
+    num_frames = math.ceil(duration_in_frames + 1)
     return max(max_num_keyframes, num_frames)

@@ -11,14 +11,14 @@ from ..tools.blenderhelper import add_child_of_bone_constraint, create_empty_obj
 from ..tools.meshhelper import create_uv_attr
 from ..tools.utils import multiply_homogeneous, get_filename
 from ..shared.shader_nodes import SzShaderNodeParameter
-from ..sollumz_properties import BOUND_TYPES, SollumType, MaterialType, SollumzGame, VehiclePaintLayer
+from ..sollumz_properties import BOUND_TYPES, SollumType, MaterialType, SollumzGame
 from ..sollumz_preferences import get_import_settings
 from ..cwxml.fragment import YFT, Fragment, PhysicsLOD, PhysicsGroup, PhysicsChild, Window, Archetype, GlassWindow
 from ..cwxml.drawable import Drawable, Bone
 from ..ydr.ydrimport import apply_translation_limits, create_armature_obj_from_skel, create_drawable_skel, apply_rotation_limits, create_joint_constraints, create_light_objs, create_drawable_obj, create_drawable_as_asset, shadergroup_to_materials, create_drawable_models
-from ..ybn.ybnimport import create_bound_object, set_bound_properties
+from ..ybn.ybnimport import create_bound_object
 from .. import logger
-from .properties import LODProperties, FragArchetypeProperties, GlassTypes, PAINT_LAYER_VALUES, FragmentTemplateAsset
+from .properties import LODProperties, FragArchetypeProperties, GlassTypes, FragmentTemplateAsset
 from ..tools.blenderhelper import get_child_of_bone
 from ..ydr import ydrimport
 
@@ -28,34 +28,59 @@ def import_yft(filepath: str):
     raise Exception("Fragment import has been disabled as it's Work In Progress")
     import_settings = get_import_settings()
 
-    name = get_filename(filepath)
-    yft_xml = YFT.from_xml_file(filepath)
+    if is_hi_yft_filepath(filepath):
+        # User selected a _hi.yft.xml, look for the base .yft.xml file
+        non_hi_filepath = make_non_hi_yft_filepath(filepath)
+        hi_filepath = filepath
+
+        if not os.path.exists(non_hi_filepath):
+            logger.error("Trying to import a _hi.yft.xml without its base .yft.xml! Please, make sure the non-hi "
+                         f"{os.path.basename(non_hi_filepath)} is in the same folder as {os.path.basename(hi_filepath)}.")
+            return None
+    else:
+        # User selected the base .yft.xml, optionally look for the _hi.yft.xml
+        non_hi_filepath = filepath
+        hi_filepath = make_hi_yft_filepath(filepath)
+    name = get_filename(non_hi_filepath)
+    yft_xml = YFT.from_xml_file(non_hi_filepath)
 
     if isinstance(yft_xml, RDRFragment):
         global current_game
         current_game = SollumzGame.RDR
 
     if import_settings.import_as_asset:
-        return create_drawable_as_asset(yft_xml.drawable, name, filepath)
+        return create_drawable_as_asset(yft_xml.drawable, name, non_hi_filepath)
 
-    hi_xml = parse_hi_yft(filepath) if import_settings.import_with_hi else None
+    # Import the _hi.yft.xml if it exists
+    hi_xml = YFT.from_xml_file(hi_filepath) if os.path.exists(hi_filepath) else None
 
-    return create_fragment_obj(yft_xml, filepath, name,
+    return create_fragment_obj(yft_xml, non_hi_filepath, name,
                                split_by_group=import_settings.split_by_group, hi_xml=hi_xml)
 
 
-def parse_hi_yft(yft_filepath: str) -> Fragment | None:
-    """Parse hi_yft at the provided non_hi yft filepath (if it exists)."""
+def is_hi_yft_filepath(yft_filepath: str):
+    """Is this a _hi.yft.xml file?"""
+    return os.path.basename(yft_filepath).endswith("_hi.yft.xml")
+
+
+def make_hi_yft_filepath(yft_filepath: str) -> str:
+    """Get the _hi.yft.xml filepath at the provided non-hi yft filepath."""
     yft_dir = os.path.dirname(yft_filepath)
     yft_name = get_filename(yft_filepath)
 
     hi_path = os.path.join(yft_dir, f"{yft_name}_hi.yft.xml")
+    return hi_path
 
-    if os.path.exists(hi_path):
-        return YFT.from_xml_file(hi_path)
-    else:
-        logger.warning(
-            f"Could not find _hi yft for {os.path.basename(yft_filepath)}! Make sure there is a file named '{os.path.basename(hi_path)}' in the same directory!")
+
+def make_non_hi_yft_filepath(yft_filepath: str) -> str:
+    """Get the base .yft.xml filepath at the provided hi yft filepath."""
+    yft_dir = os.path.dirname(yft_filepath)
+    yft_name = get_filename(yft_filepath)
+    if yft_name.endswith("_hi"):
+        yft_name = yft_name[:-3]  # trim '_hi'
+
+    non_hi_path = os.path.join(yft_dir, f"{yft_name}.yft.xml")
+    return non_hi_path
 
 
 def create_fragment_obj(frag_xml: Fragment, filepath: str, name: Optional[str] = None, split_by_group: bool = False, hi_xml: Optional[Fragment] = None):
@@ -64,15 +89,32 @@ def create_fragment_obj(frag_xml: Fragment, filepath: str, name: Optional[str] =
     if hi_xml is not None:
         frag_xml = merge_hi_fragment(frag_xml, hi_xml)
 
-    materials = shadergroup_to_materials(
-        frag_xml.drawable.shader_group, filepath)
-    if current_game == SollumzGame.GTA:
-        update_mat_paint_layers(materials)
+    materials = shadergroup_to_materials(frag_xml.drawable.shader_group, filepath)
 
-    drawable_obj = create_fragment_drawable(
-        frag_xml, frag_obj, filepath, materials, split_by_group)
+    if current_game == SollumzGame.GTA:
+        # Need to append [PAINT_LAYER] extension at the end of the material names
+        for mat in materials:
+            if "matDiffuseColor" in mat.node_tree.nodes:
+                from .properties import _update_mat_paint_name
+                _update_mat_paint_name(mat)
+
+    drawable_obj = create_fragment_drawable(frag_xml, frag_obj, filepath, materials, split_by_group)
+    # damaged_drawable_obj = create_fragment_drawable(
+    #     frag_xml, frag_obj, filepath, materials, split_by_group, damaged=True)
 
     # create_frag_collisions(frag_xml, frag_obj)
+    # if damaged_drawable_obj is not None:
+    #     create_frag_collisions(frag_xml, frag_obj, damaged=True)
+    #
+    #     if frag_xml.physics.lod1.damaged_archetype is not None:
+    #         a = frag_xml.physics.lod1.archetype
+    #         b = frag_xml.physics.lod1.damaged_archetype
+    #         # We assume that these archetype properties are the same in both the undamaged and damaged archetypes so the
+    #         # user only has to set them once in the UI
+    #         assert a.unknown_48 == b.unknown_48, "gravity_factor different in damaged archetype. Open an issue!"
+    #         assert a.unknown_4c == b.unknown_4c, "max_speed factor different in damaged archetype. Open an issue!"
+    #         assert a.unknown_50 == b.unknown_50, "max_ang_speed different in damaged archetype. Open an issue!"
+    #         assert a.unknown_54 == b.unknown_54, "buoyancy_factor different in damaged archetype. Open an issue!"
 
     # create_phys_lod(frag_xml, frag_obj)
     # set_all_bone_physics_properties(frag_obj.data, frag_xml)
@@ -105,9 +147,26 @@ def create_frag_armature(frag_xml: Fragment, name: Optional[str] = None):
     return frag_obj
 
 
-def create_fragment_drawable(frag_xml: Fragment, frag_obj: bpy.types.Object, filepath: str, materials: list[bpy.types.Material], split_by_group: bool = False):
+def create_fragment_drawable(frag_xml: Fragment, frag_obj: bpy.types.Object, filepath: str, materials: list[bpy.types.Material], split_by_group: bool = False, damaged: bool = False) -> Optional[bpy.types.Object]:
+    if damaged:
+        if not frag_xml.extra_drawables:
+            return None
+
+        drawable_xml = frag_xml.extra_drawables[0]
+        drawable_name = f"{frag_obj.name}.damaged.mesh"
+    else:
+        drawable_xml = frag_xml.drawable
+        drawable_name = f"{frag_obj.name}.mesh"
+
     drawable_obj = create_drawable_obj(
-        frag_xml.drawable, filepath, name=f"{frag_obj.name}.mesh", materials=materials, split_by_group=split_by_group, external_armature=frag_obj, game=current_game)
+        drawable_xml,
+        filepath,
+        name=drawable_name,
+        materials=materials,
+        split_by_group=split_by_group,
+        external_armature=frag_obj,
+        game=current_game,
+    )
     drawable_obj.parent = frag_obj
 
     return drawable_obj
@@ -126,31 +185,6 @@ def merge_hi_fragment(frag_xml: Fragment, hi_xml: Fragment) -> Fragment:
     frag_xml = FragmentMerger(frag_xml, hi_xml).merge()
 
     return frag_xml
-
-
-def update_mat_paint_layers(materials: list[bpy.types.Material]):
-    for mat in materials:
-        mat.sollumz_paint_layer = get_mat_paint_layer(mat)
-
-
-def get_mat_paint_layer(mat: bpy.types.Material):
-    """Get material paint layer (i.e Primary, Secondary) based on the value of matDiffuseColor"""
-    x = -1
-    y = -1
-    z = -1
-
-    for node in mat.node_tree.nodes:
-        if isinstance(node, SzShaderNodeParameter) and node.name == "matDiffuseColor":
-            x = node.get("X")
-            y = node.get("Y")
-            z = node.get("Z")
-            break
-
-    for paint_layer, value in PAINT_LAYER_VALUES.items():
-        if x == 2 and y == value and z == value:
-            return paint_layer
-
-    return VehiclePaintLayer.NOT_PAINTABLE
 
 
 def create_phys_lod(frag_xml: Fragment, frag_obj: bpy.types.Object):
@@ -180,18 +214,22 @@ def set_all_bone_physics_properties(armature: bpy.types.Armature, frag_xml: Frag
         set_group_properties(group_xml, bone)
 
 
-def create_frag_collisions(frag_xml: Fragment, frag_obj: bpy.types.Object) -> bpy.types.Object | None:
-    bounds_xml = frag_xml.physics.lod1.archetype.bounds
+def create_frag_collisions(frag_xml: Fragment, frag_obj: bpy.types.Object, damaged: bool = False) -> Optional[bpy.types.Object]:
+    lod1 = frag_xml.physics.lod1
+    bounds_xml = lod1.damaged_archetype.bounds if damaged else lod1.archetype.bounds
 
     if bounds_xml is None or not bounds_xml.children:
         return None
 
-    composite_obj = create_empty_object(
-        SollumType.BOUND_COMPOSITE, name=f"{frag_obj.name}.col")
-    set_bound_properties(bounds_xml, composite_obj)
+    col_name_suffix = ".damaged.col" if damaged else ".col"
+    composite_name = f"{frag_obj.name}{col_name_suffix}"
+    composite_obj = create_empty_object(SollumType.BOUND_COMPOSITE, name=composite_name)
     composite_obj.parent = frag_obj
 
     for i, bound_xml in enumerate(bounds_xml.children):
+        if bound_xml is None:
+            continue
+
         bound_obj = create_bound_object(bound_xml)
         bound_obj.parent = composite_obj
 
@@ -199,13 +237,19 @@ def create_frag_collisions(frag_xml: Fragment, frag_obj: bpy.types.Object) -> bp
         if bone is None:
             continue
 
-        bound_obj.name = f"{bone.name}.col"
+        bound_obj.name = f"{bone.name}{col_name_suffix}"
 
         if bound_obj.data is not None:
             bound_obj.data.name = bound_obj.name
 
-        add_col_bone_constraint(bound_obj, frag_obj, bone.name)
-        bound_obj.child_properties.mass = frag_xml.physics.lod1.children[i].pristine_mass
+        phys_child = lod1.children[i]
+        bound_obj.child_properties.mass = phys_child.damaged_mass if damaged else phys_child.pristine_mass
+        # NOTE: we currently lose damaged mass or pristine mass if the phys child only has a pristine bound or damaged
+        # bound, but archetype still use this mass. Is this important?
+
+        add_child_of_bone_constraint(bound_obj, frag_obj, bone.name)
+        drawable = phys_child.damaged_drawable if damaged else phys_child.drawable
+        bound_obj.matrix_local = drawable.frag_bound_matrix.transposed()
 
 
 def find_bound_bone(bound_index: int, frag_xml: Fragment) -> Bone | None:
@@ -221,17 +265,6 @@ def find_bound_bone(bound_index: int, frag_xml: Fragment) -> Bone | None:
             continue
 
         return bone
-
-
-def add_col_bone_constraint(bound_obj: bpy.types.Object, frag_obj: bpy.types.Object, bone_name: str):
-    constraint = add_child_of_bone_constraint(bound_obj, frag_obj, bone_name)
-
-    # Composite transforms include bone transforms, so adding the child of bone constraint will cause the object
-    # to get the bone transforms twice. We need to invert the bone transforms so this does not happen.
-    bpy_bone = frag_obj.data.bones.get(constraint.subtarget)
-    bound_obj.matrix_local = bpy_bone.matrix_local.inverted() @ bound_obj.matrix_local
-
-    return constraint
 
 
 def create_phys_child_meshes(frag_xml: Fragment, frag_obj: bpy.types.Object, drawable_obj: bpy.types.Object, materials: list[bpy.types.Material]):
@@ -367,9 +400,8 @@ def create_shattermap_mesh(window_xml: Window, name: str, window_matrix: Matrix)
     mesh.from_pydata(verts, [], faces)
     mesh.transform(window_matrix.inverted())
 
-    uvs = np.array([[0.0, 1.0], [0.0, 0.0], [1.0, 0.0],
-                   [1.0, 1.0]], dtype=np.float64)
-    create_uv_attr(mesh, uvs)
+    uvs = np.array([[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], dtype=np.float64)
+    create_uv_attr(mesh, 0, initial_values=uvs)
 
     return mesh
 
@@ -417,17 +449,31 @@ def shattermap_to_image(shattermap, name):
     i = 0
     for row in reversed(shattermap):
         frow = [row[x:x + 2] for x in range(0, len(row), 2)]
+        # Need to check for malformed shattermaps. ZModeler shattermaps seem to be missing a value of "--" when "--" appears in a row. We check for this specific case and insert a "--" to the row.
+        # We don't handle other malformed data, an error will be logged in the try/except below.
+        if len(frow) == (width - 1):
+            try:
+                idx = frow.index("--")
+            except ValueError:
+                idx = None
+            if idx is not None:
+                frow.insert(idx, "--")
         for value in frow:
             pixels.append(get_rgb(value))
             i += 1
 
     pixels = [chan for px in pixels for chan in px]
-    img.pixels = pixels
+    try:
+        img.pixels = pixels
+    except ValueError:
+        logger.error("Cannot create shattermap, shattermap data is malformed")
+
     return img
 
 
 def shattermap_to_material(shattermap, name):
     img = shattermap_to_image(shattermap, name)
+    img.pack()
     mat = material_from_image(img, name, "ShatterMap")
     mat.sollum_type = MaterialType.SHATTER_MAP
 
@@ -482,18 +528,13 @@ def set_fragment_properties(frag_xml: Fragment, frag_obj: bpy.types.Object):
     # unknown_c0 include "entity class" and "attach bottom end" but those are always 0 in game assets and seem unused
     if current_game == SollumzGame.GTA:
         frag_obj.fragment_properties.template_asset = FragmentTemplateAsset((frag_xml.unknown_c0 >> 8) & 0xFF).name
-        frag_obj.fragment_properties.flags = frag_xml.unknown_c4
         frag_obj.fragment_properties.unbroken_elasticity = frag_xml.unknown_cc
         frag_obj.fragment_properties.gravity_factor = frag_xml.gravity_factor
         frag_obj.fragment_properties.buoyancy_factor = frag_xml.buoyancy_factor
 
 
 def set_lod_properties(lod_xml: PhysicsLOD, lod_props: LODProperties):
-    lod_props.smallest_ang_inertia = lod_xml.unknown_14
-    lod_props.largest_ang_inertia = lod_xml.unknown_18
     lod_props.min_move_force = lod_xml.unknown_1c
-    lod_props.position_offset = lod_xml.position_offset
-    lod_props.original_root_cg_offset = lod_xml.unknown_40
     lod_props.unbroken_cg_offset = lod_xml.unknown_50
     lod_props.damping_linear_c = lod_xml.damping_linear_c
     lod_props.damping_linear_v = lod_xml.damping_linear_v
@@ -509,7 +550,6 @@ def set_archetype_properties(arch_xml: Archetype, arch_props: FragArchetypePrope
     arch_props.max_speed = arch_xml.unknown_4c
     arch_props.max_ang_speed = arch_xml.unknown_50
     arch_props.buoyancy_factor = arch_xml.unknown_54
-    arch_props.inertia_tensor = arch_xml.inertia_tensor
 
 
 def set_group_properties(group_xml: PhysicsGroup, bone: bpy.types.Bone):

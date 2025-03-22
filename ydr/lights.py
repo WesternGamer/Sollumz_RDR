@@ -4,11 +4,13 @@ from typing import Optional
 from mathutils import Matrix, Vector
 from .light_flashiness import Flashiness
 from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumType, LightType
-from ..tools.blenderhelper import create_empty_object, create_blender_object
-from ..sollumz_preferences import get_addon_preferences
+from ..tools.blenderhelper import create_empty_object, create_blender_object, add_child_of_bone_constraint
 from ..cwxml.drawable import Light
+from ..cwxml.ymap import LightInstance
 from .properties import LightProperties
 from .. import logger
+
+INTENSITY_SCALE_FACTOR = 500
 
 
 def create_light_objs(lights: list[Light], armature_obj: Optional[bpy.types.Object] = None):
@@ -19,6 +21,11 @@ def create_light_objs(lights: list[Light], armature_obj: Optional[bpy.types.Obje
         lobj.parent = lights_parent
 
     return lights_parent
+
+
+def create_light_instance_objs(lights: list[LightInstance], armature_obj: Optional[bpy.types.Object] = None):
+    lights = [convert_light_instance_to_light_xml(li) for li in lights]
+    return create_light_objs(lights, armature_obj)
 
 
 def create_light(light_xml: Light, armature_obj: Optional[bpy.types.Object] = None):
@@ -75,12 +82,7 @@ def create_light_bone_constraint(light_xml: Light, light_obj: bpy.types.Object, 
         if bone.bone_properties.tag != light_xml.bone_id:
             continue
 
-        constraint = light_obj.constraints.new("COPY_TRANSFORMS")
-        constraint.target = armature_obj
-        constraint.subtarget = bone.name
-        constraint.mix_mode = "BEFORE_FULL"
-        constraint.target_space = "POSE"
-        constraint.owner_space = "LOCAL"
+        add_child_of_bone_constraint(light_obj, armature_obj, bone.name)
 
 
 def set_light_rotation(light_xml: Light, light_obj: bpy.types.Object):
@@ -95,11 +97,8 @@ def set_light_rotation(light_xml: Light, light_obj: bpy.types.Object):
 
 def set_light_bpy_properties(light_xml: Light, light_data: bpy.types.Light):
     """Set Blender light properties of ``light_data`` based on ``light_xml``."""
-    preferences = get_addon_preferences(bpy.context)
-    intensity_factor = 500 if preferences.scale_light_intensity else 1
-
     light_data.color = [channel / 255 for channel in light_xml.color]
-    light_data.energy = light_xml.intensity * intensity_factor
+    light_data.energy = light_xml.intensity * INTENSITY_SCALE_FACTOR
     light_data.use_custom_distance = True
     light_data.cutoff_distance = light_xml.falloff
     light_data.shadow_soft_size = light_xml.falloff_exponent / 5
@@ -143,25 +142,33 @@ def set_light_rage_properties(light_xml: Light, light_data: bpy.types.Light):
     light_props.corona_z_bias = light_xml.corona_z_bias
 
 
-def create_xml_lights(parent_obj: bpy.types.Object, armature_obj: Optional[bpy.types.Object] = None):
+def create_xml_lights(parent_obj: bpy.types.Object) -> list[Light]:
     light_xmls: list[Light] = []
 
     for child in parent_obj.children_recursive:
         if child.type == "LIGHT" and child.data.sollum_type != LightType.NONE:
-            light_xmls.append(create_light_xml(child, parent_obj, armature_obj))
+            light_xmls.append(create_light_xml(child, parent_obj))
 
     return light_xmls
 
 
-def create_light_xml(light_obj: bpy.types.Object, parent_obj: bpy.types.Object, armature_obj: Optional[bpy.types.Object] = None):
+def create_xml_light_instances(parent_obj: bpy.types.Object) -> list[LightInstance]:
+    lights = create_xml_lights(parent_obj)
+    return [convert_light_to_light_instance_xml(light) for light in lights]
+
+
+def create_light_xml(light_obj: bpy.types.Object, parent_obj: bpy.types.Object):
     light_xml = Light()
-    mat = parent_obj.matrix_world.inverted() @ light_obj.matrix_world
+
+    root_mat = parent_obj.matrix_world
+    bone = set_light_xml_bone_id(light_xml, light_obj)
+    if bone is not None:
+        root_mat = root_mat @ bone.matrix_local
+
+    mat = root_mat.inverted() @ light_obj.matrix_world
     light_xml.position = mat.to_translation()
     set_light_xml_direction(light_xml, mat)
     set_light_xml_tangent(light_xml, mat)
-
-    if armature_obj is not None:
-        set_light_xml_bone_id(light_xml, armature_obj.data, light_obj)
 
     set_light_xml_properties(light_xml, light_obj.data)
 
@@ -178,13 +185,21 @@ def set_light_xml_tangent(light_xml: Light, mat: Matrix):
     light_xml.tangent = Vector((mat[0][0], mat[1][0], mat[2][0])).normalized()
 
 
-def set_light_xml_bone_id(light_xml: Light, armature: bpy.types.Armature, light_obj: bpy.types.Object):
+def set_light_xml_bone_id(light_xml: Light, light_obj: bpy.types.Object):
     for constraint in light_obj.constraints:
         if not isinstance(constraint, bpy.types.CopyTransformsConstraint):
             continue
 
-        bone = constraint.subtarget
-        light_xml.bone_id = armature.bones[bone].bone_properties.tag
+        if constraint.target is None or constraint.target.type != "ARMATURE":
+            continue
+
+        armature = constraint.target.data
+        bone_name = constraint.subtarget
+        bone = armature.bones[bone_name]
+        light_xml.bone_id = bone.bone_properties.tag
+        return bone
+
+    return None
 
 
 def set_light_xml_properties(light_xml: Light, light_data: bpy.types.Light):
@@ -196,7 +211,7 @@ def set_light_xml_properties(light_xml: Light, light_data: bpy.types.Light):
     light_xml.flags = light_data.light_flags.total
 
     light_xml.color = light_data.color * 255
-    light_xml.intensity = light_data.energy / 500
+    light_xml.intensity = light_data.energy / INTENSITY_SCALE_FACTOR
 
     light_xml.flashiness = Flashiness[light_props.flashiness].value
     light_xml.group_id = light_props.group_id
@@ -226,3 +241,118 @@ def set_light_xml_properties(light_xml: Light, light_data: bpy.types.Light):
         light_xml.cone_inner_angle = degrees(
             abs((light_data.spot_blend * pi) - pi))
         light_xml.cone_outer_angle = degrees(light_data.spot_size) / 2
+
+
+def duplicate_lights_for_light_effect(parent_obj: bpy.types.Object) -> bpy.types.Object:
+    lights_parent = create_empty_object(SollumType.NONE, "Lights")
+
+    for child in parent_obj.children_recursive:
+        if child.type == "LIGHT" and child.data.sollum_type != LightType.NONE:
+            light_copy = child.copy()
+            light_copy.data = light_copy.data.copy()
+            light_copy.parent = lights_parent
+            bpy.context.collection.objects.link(light_copy)
+
+    return lights_parent
+
+
+def convert_light_instance_to_light_xml(li: LightInstance) -> Light:
+    """Converts a ``LightInstance`` XML object (used in meta files, i.e. ymaps and ytyps, in light effect extensions) to a ``Light`` XML object (used in drawables)."""
+    def _text_list_to_vec(tl):
+        return Vector([float(v) for v in tl])
+
+    def _text_list_to_color(tl):
+        return [int(v) for v in tl]
+
+    light = Light()
+    light.position = _text_list_to_vec(li.position)
+    light.color = _text_list_to_color(li.color)
+    light.flashiness = li.flashiness
+    light.intensity = li.intensity
+    light.flags = li.flags
+    light.bone_id = li.bone_id
+    if li.light_type == 1:
+        light.type = "Point"
+    elif li.light_type == 2:
+        light.type = "Spot"
+    elif li.light_type == 4:
+        light.type = "Capsule"
+    light.group_id = li.group_id
+    light.time_flags = li.time_flags
+    light.falloff = li.falloff
+    light.falloff_exponent = li.falloff_exponent
+    light.culling_plane_normal = _text_list_to_vec(li.culling_plane[:3])
+    light.culling_plane_offset = float(li.culling_plane[3])
+    light.volume_intensity = li.volume_intensity
+    light.volume_size_scale = li.volume_size_scale
+    light.volume_outer_color = _text_list_to_color(li.volume_outer_color)
+    light.volume_outer_intensity = li.volume_outer_intensity
+    light.volume_outer_exponent = li.volume_outer_exponent
+    light.light_hash = li.light_hash
+    light.corona_size = li.corona_size
+    light.corona_intensity = li.corona_intensity
+    light.corona_z_bias = li.corona_z_bias
+    light.light_fade_distance = li.light_fade_distance
+    light.shadow_fade_distance = li.shadow_fade_distance
+    light.specular_fade_distance = li.specular_fade_distance
+    light.volumetric_fade_distance = li.volumetric_fade_distance
+    light.shadow_near_clip = li.shadow_near_clip
+    light.direction = _text_list_to_vec(li.direction)
+    light.tangent = _text_list_to_vec(li.tangent)
+    light.cone_inner_angle = li.cone_inner_angle
+    light.cone_outer_angle = li.cone_outer_angle
+    light.extent = _text_list_to_vec(li.extents)
+    light.shadow_blur = li.shadow_blur
+    light.projected_texture_hash = f"hash_{li.projected_texture_key:08X}" if li.projected_texture_key != 0 else ""
+    return light
+
+
+def convert_light_to_light_instance_xml(light: Light) -> LightInstance:
+    """Converts a ``Light`` XML object (used in drawables) to a ``LightInstance`` XML object (used in meta files, i.e. ymaps and ytyps, in light effect extensions)."""
+    def _vec_to_text_list(vec):
+        return [str(v) for v in vec]
+
+    def _color_to_text_list(color):
+        return [str(int(v)) for v in color]
+
+    li = LightInstance()
+    li.position = _vec_to_text_list(light.position)
+    li.color = _color_to_text_list(light.color)
+    li.flashiness = light.flashiness
+    li.intensity = light.intensity
+    li.flags = light.flags
+    li.bone_id = light.bone_id
+    if light.type == "Point":
+        li.light_type = 1
+    elif light.type == "Spot":
+        li.light_type = 2
+    elif light.type == "Capsule":
+        li.light_type = 4
+    li.group_id = light.group_id
+    li.time_flags = light.time_flags
+    li.falloff = light.falloff
+    li.falloff_exponent = light.falloff_exponent
+    li.culling_plane = _vec_to_text_list(light.culling_plane_normal) + [str(light.culling_plane_offset)]
+    li.volume_intensity = light.volume_intensity
+    li.volume_size_scale = light.volume_size_scale
+    li.volume_outer_color = _color_to_text_list(light.volume_outer_color)
+    li.volume_outer_intensity = light.volume_outer_intensity
+    li.volume_outer_exponent = light.volume_outer_exponent
+    li.light_hash = light.light_hash
+    li.corona_size = light.corona_size
+    li.corona_intensity = light.corona_intensity
+    li.corona_z_bias = light.corona_z_bias
+    li.light_fade_distance = light.light_fade_distance
+    li.shadow_fade_distance = light.shadow_fade_distance
+    li.specular_fade_distance = light.specular_fade_distance
+    li.volumetric_fade_distance = light.volumetric_fade_distance
+    li.shadow_near_clip = light.shadow_near_clip
+    li.direction = _vec_to_text_list(light.direction)
+    li.tangent = _vec_to_text_list(light.tangent)
+    li.cone_inner_angle = light.cone_inner_angle
+    li.cone_outer_angle = light.cone_outer_angle
+    li.extents = _vec_to_text_list(light.extent)
+    li.shadow_blur = light.shadow_blur
+    from ..tools.jenkhash import name_to_hash
+    li.projected_texture_key = name_to_hash(light.projected_texture_hash)
+    return li

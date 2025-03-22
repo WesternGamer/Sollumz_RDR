@@ -1,11 +1,25 @@
 import bpy
+from typing import Optional
 from .sollumz_preferences import get_addon_preferences, get_export_settings, get_import_settings, SollumzImportSettings, SollumzExportSettings
 from .sollumz_operators import SOLLUMZ_OT_copy_location, SOLLUMZ_OT_copy_rotation, SOLLUMZ_OT_paste_location, SOLLUMZ_OT_paste_rotation
 from .tools.blenderhelper import get_armature_obj
-from .sollumz_properties import SollumType, MaterialType
-from .lods import (SOLLUMZ_OT_SET_LOD_HIGH, SOLLUMZ_OT_SET_LOD_MED, SOLLUMZ_OT_SET_LOD_LOW, SOLLUMZ_OT_SET_LOD_VLOW,
-                   SOLLUMZ_OT_SET_LOD_VERY_HIGH, SOLLUMZ_OT_HIDE_COLLISIONS, SOLLUMZ_OT_HIDE_SHATTERMAPS, SOLLUMZ_OT_HIDE_OBJECT, SOLLUMZ_OT_SHOW_COLLISIONS, SOLLUMZ_OT_SHOW_SHATTERMAPS)
+from .sollumz_properties import (
+    SollumType,
+    MaterialType,
+    SOLLUMZ_UI_NAMES,
+)
+from .sollumz_helper import find_sollumz_parent
+from .lods import (
+    LODLevel,
+    SOLLUMZ_OT_set_lod_level,
+    SOLLUMZ_OT_hide_object,
+    SOLLUMZ_OT_HIDE_COLLISIONS,
+    SOLLUMZ_OT_HIDE_SHATTERMAPS,
+    SOLLUMZ_OT_SHOW_COLLISIONS,
+    SOLLUMZ_OT_SHOW_SHATTERMAPS
+)
 from .icons import icon_manager
+
 
 def draw_list_with_add_remove(layout: bpy.types.UILayout, add_operator: str, remove_operator: str, *temp_list_args, **temp_list_kwargs):
     """Draw a UIList with an add and remove button on the right column. Returns the left column."""
@@ -29,13 +43,22 @@ class BasicListHelper:
     def draw_item(
         self, context, layout, data, item, icon, active_data, active_propname, index
     ):
-        if not self.name_editable:
-            layout.label(text=getattr(item, self.name_prop),
-                         icon=self.item_icon)
-            return
+        icon = self.get_item_icon(item)
+        match icon:
+            case str():
+                icon_str, icon_value = icon, 0
+            case int():
+                icon_str, icon_value = "NONE", icon
+            case _:
+                raise ValueError(f"Invalid item icon. Only str or int supported, got '{icon}'")
 
-        layout.prop(item, self.name_prop, text="",
-                    emboss=False, icon=self.item_icon)
+        if self.name_editable:
+            layout.prop(item, self.name_prop, text="", emboss=False, icon=icon_str, icon_value=icon_value)
+        else:
+            layout.label(text=getattr(item, self.name_prop), icon=icon_str, icon_value=icon_value)
+
+    def get_item_icon(self, item) -> str | int:
+        return self.item_icon
 
 
 class FilterListHelper:
@@ -107,7 +130,7 @@ class SollumzFileSettingsPanel:
 
 
 class SollumzImportSettingsPanel(SollumzFileSettingsPanel):
-    operator_id = "SOLLUMZ_OT_import"
+    operator_id = "SOLLUMZ_OT_import_assets"
 
     def get_settings(self, context: bpy.types.Context):
         return get_import_settings(context)
@@ -117,7 +140,7 @@ class SollumzImportSettingsPanel(SollumzFileSettingsPanel):
 
 
 class SollumzExportSettingsPanel(SollumzFileSettingsPanel):
-    operator_id = "SOLLUMZ_OT_export"
+    operator_id = "SOLLUMZ_OT_export_assets"
 
     def get_settings(self, context: bpy.types.Context):
         return get_export_settings(context)
@@ -140,7 +163,6 @@ class SOLLUMZ_PT_import_fragment(bpy.types.Panel, SollumzImportSettingsPanel):
 
     def draw_settings(self, layout: bpy.types.UILayout, settings: SollumzImportSettings):
         layout.prop(settings, "split_by_group")
-        layout.prop(settings, "import_with_hi")
 
 
 class SOLLUMZ_PT_import_ydd(bpy.types.Panel, SollumzImportSettingsPanel):
@@ -212,13 +234,13 @@ class SOLLUMZ_PT_export_fragment(bpy.types.Panel, SollumzExportSettingsPanel):
         layout.column().prop(settings, "export_lods")
 
 
-class SOLLUMZ_PT_export_collision(bpy.types.Panel, SollumzExportSettingsPanel):
-    bl_label = "Collisions"
-    bl_order = 3
-
-    def draw_settings(self, layout: bpy.types.UILayout, settings: SollumzExportSettings):
-        layout.prop(settings, "auto_calculate_inertia")
-        layout.prop(settings, "auto_calculate_volume")
+# Empty for now
+# class SOLLUMZ_PT_export_collision(bpy.types.Panel, SollumzExportSettingsPanel):
+#     bl_label = "Collisions"
+#     bl_order = 3
+#
+#     def draw_settings(self, layout: bpy.types.UILayout, settings: SollumzExportSettings):
+#         pass
 
 
 class SOLLUMZ_PT_export_ydd(bpy.types.Panel, SollumzExportSettingsPanel):
@@ -272,23 +294,28 @@ class SOLLUMZ_PT_TOOL_PANEL(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         row = layout.row()
-        row.operator("sollumz.import")
+        row.operator("sollumz.import_assets")
 
         if context.scene.sollumz_export_path != "":
-            op = row.operator("sollumz.export")
+            op = row.operator("sollumz.export_assets")
             op.directory = context.scene.sollumz_export_path
             op.direct_export = True
         else:
-            row.operator("sollumz.export")
+            row.operator("sollumz.export_assets")
 
 
-class SOLLUMZ_PT_VIEW_PANEL(bpy.types.Panel):
-    bl_label = "View"
-    bl_idname = "SOLLUMZ_PT_VIEW_PANEL"
-    bl_category = "Sollumz Tools"
+class GeneralToolChildPanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
+    bl_options = {"DEFAULT_CLOSED"}
     bl_parent_id = SOLLUMZ_PT_TOOL_PANEL.bl_idname
+    bl_category = SOLLUMZ_PT_TOOL_PANEL.bl_category
+
+
+class SOLLUMZ_PT_VIEW_PANEL(GeneralToolChildPanel, bpy.types.Panel):
+    bl_label = "View"
+    bl_idname = "SOLLUMZ_PT_VIEW_PANEL"
+    bl_options = set()
     bl_order = 0
 
     def draw_header(self, context):
@@ -313,26 +340,46 @@ class SOLLUMZ_PT_VIEW_PANEL(bpy.types.Panel):
 
         layout.label(text="Level of Detail")
 
+        active_obj = context.view_layer.objects.active
+        active_lod_level = self._get_object_active_lod_level(active_obj)
+
         grid = layout.grid_flow(align=True, row_major=True)
+        grid.enabled = active_obj is not None and context.view_layer.objects.active.mode == "OBJECT"
         grid.scale_x = 0.7
-        grid.operator(SOLLUMZ_OT_SET_LOD_VERY_HIGH.bl_idname)
-        grid.operator(SOLLUMZ_OT_SET_LOD_HIGH.bl_idname)
-        grid.operator(SOLLUMZ_OT_SET_LOD_MED.bl_idname)
-        grid.operator(SOLLUMZ_OT_SET_LOD_LOW.bl_idname)
-        grid.operator(SOLLUMZ_OT_SET_LOD_VLOW.bl_idname)
-        grid.operator(SOLLUMZ_OT_HIDE_OBJECT.bl_idname)
+        for lod_level in LODLevel:
+            grid.operator(
+                SOLLUMZ_OT_set_lod_level.bl_idname,
+                text=SOLLUMZ_UI_NAMES[lod_level],
+                depress=active_lod_level == lod_level
+            ).lod_level = lod_level
+        grid.operator(SOLLUMZ_OT_hide_object.bl_idname, depress=active_lod_level == "hidden")
 
-        grid.enabled = context.view_layer.objects.active is not None and context.view_layer.objects.active.mode == "OBJECT"
+    def _get_object_active_lod_level(self, obj: Optional[bpy.types.Object]) -> Optional[str]:
+        if obj is None:
+            return None
+
+        parent_obj = find_sollumz_parent(obj)
+        if parent_obj is None:
+            return None
+
+        active_lod_level = None
+        if parent_obj.hide_get():
+            active_lod_level = "hidden"
+        else:
+            for child in parent_obj.children_recursive:
+                if child.type == "MESH" and child.sollum_type == SollumType.DRAWABLE_MODEL:
+                    # Simply use the LOD level of the first model we find. Might not be accurate if the user
+                    # manually changes LODs of the models separately instead of using the buttons in the tools
+                    # panel, but in general this should be enough.
+                    active_lod_level = child.sz_lods.active_lod_level
+                    break
+
+        return active_lod_level
 
 
-class SOLLUMZ_PT_OBJ_YMAP_LOCATION(bpy.types.Panel):
+class SOLLUMZ_PT_OBJ_YMAP_LOCATION(GeneralToolChildPanel, bpy.types.Panel):
     bl_label = "Object Location & Rotation Tools"
     bl_idname = "SOLLUMZ_PT_OBJ_YMAP_LOCATION"
-    bl_category = "Sollumz Tools"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_TOOL_PANEL.bl_idname
     bl_order = 3
 
     def draw_header(self, context):
@@ -356,7 +403,7 @@ class SOLLUMZ_PT_OBJ_YMAP_LOCATION(bpy.types.Panel):
 
             row.operator(SOLLUMZ_OT_copy_location.bl_idname, text="", icon='COPYDOWN') \
                .location = "{:.6f}, {:.6f}, {:.6f}".format(loc[0], loc[1], loc[2])
-            
+
             row.operator(SOLLUMZ_OT_copy_rotation.bl_idname, text="", icon='COPYDOWN') \
                .rotation = "{:.6f}, {:.6f}, {:.6f}, {:.6f}".format(rot.x, rot.y, rot.z, rot.w)
 
@@ -365,15 +412,9 @@ class SOLLUMZ_PT_OBJ_YMAP_LOCATION(bpy.types.Panel):
             row.operator(SOLLUMZ_OT_paste_rotation.bl_idname, text="", icon='PASTEDOWN')
 
 
-
-
-class SOLLUMZ_PT_VERTEX_TOOL_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_VERTEX_TOOL_PANEL(GeneralToolChildPanel, bpy.types.Panel):
     bl_label = "Vertex Painter"
-    bl_idname = "SOLLUMZ_PT_VERTEX_TOOL_PANELL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_TOOL_PANEL.bl_idname
+    bl_idname = "SOLLUMZ_PT_VERTEX_TOOL_PANEL"
     bl_order = 1
 
     @classmethod
@@ -422,14 +463,9 @@ class SOLLUMZ_PT_VERTEX_TOOL_PANEL(bpy.types.Panel):
                 "sollumz.paint_vertices").color = context.scene.vert_paint_color6
 
 
-class SOLLUMZ_PT_SET_SOLLUM_TYPE_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_SET_SOLLUM_TYPE_PANEL(GeneralToolChildPanel, bpy.types.Panel):
     bl_label = "Set Sollum Type"
     bl_idname = "SOLLUMZ_PT_SET_SOLLUM_TYPE_PANEL"
-    bl_category = "Sollumz Tools"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_TOOL_PANEL.bl_idname
     bl_order = 2
 
     def draw_header(self, context):
@@ -442,14 +478,9 @@ class SOLLUMZ_PT_SET_SOLLUM_TYPE_PANEL(bpy.types.Panel):
         row.prop(context.scene, "all_sollum_type", text="")
 
 
-class SOLLUMZ_PT_DEBUG_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_DEBUG_PANEL(GeneralToolChildPanel, bpy.types.Panel):
     bl_label = "Debug"
     bl_idname = "SOLLUMZ_PT_DEBUG_PANEL"
-    bl_category = "Sollumz Tools"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_TOOL_PANEL.bl_idname
     bl_order = 4
 
     def draw_header(self, context):
@@ -464,8 +495,6 @@ class SOLLUMZ_PT_DEBUG_PANEL(bpy.types.Panel):
         row = layout.row()
         row.operator("sollumz.debug_fix_light_intensity")
         row.prop(context.scene, "debug_lights_only_selected")
-        row = layout.row()
-        row.operator("sollumz.debug_reload_entity_sets")
 
         layout.separator()
 
@@ -477,14 +506,9 @@ class SOLLUMZ_PT_DEBUG_PANEL(bpy.types.Panel):
         layout.operator("sollumz.replace_armature_constraints")
 
 
-class SOLLUMZ_PT_EXPORT_PATH_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_EXPORT_PATH_PANEL(GeneralToolChildPanel, bpy.types.Panel):
     bl_label = "Export path"
     bl_idname = "SOLLUMZ_PT_EXPORT_PATH_PANEL"
-    bl_category = "Sollumz Tools"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_TOOL_PANEL.bl_idname
     bl_order = 5
 
     def draw_header(self, context):
@@ -494,12 +518,9 @@ class SOLLUMZ_PT_EXPORT_PATH_PANEL(bpy.types.Panel):
         self.layout.prop(context.scene, "sollumz_export_path", text="")
 
 
-class SOLLUMZ_PT_TERRAIN_PAINTER_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_TERRAIN_PAINTER_PANEL(GeneralToolChildPanel, bpy.types.Panel):
     bl_label = "Terrain Painter"
     bl_idname = "SOLLUMZ_PT_TERRAIN_PAINTER_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
     bl_parent_id = SOLLUMZ_PT_VERTEX_TOOL_PANEL.bl_idname
 
     def draw_header(self, context):
@@ -619,7 +640,7 @@ class FlagsPanel:
         self.layout.prop(data_block, "total")
         self.layout.separator()
         grid = self.layout.grid_flow(columns=2)
-        for index, prop_name in enumerate(data_block.__annotations__):
+        for index, prop_name in enumerate(data_block.get_flag_names()):
             if index > data_block.size - 1:
                 break
             grid.prop(data_block, prop_name)

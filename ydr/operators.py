@@ -1,9 +1,14 @@
 import traceback
 import bpy
+from bpy.props import (
+    IntProperty,
+    BoolProperty,
+)
 from mathutils import Vector, Color
 from bpy.types import Context
 from .light_flashiness import Flashiness
 from ..cwxml.light_preset import LightPreset
+from ..cwxml.shader_preset import ShaderPreset, ShaderPresetParam
 from ..lods import LODLevels
 from ..sollumz_helper import SOLLUMZ_OT_base, find_sollumz_parent
 from ..sollumz_properties import SOLLUMZ_UI_NAMES, LODLevel, LightType, SollumType, MaterialType, SollumzGame
@@ -13,7 +18,15 @@ from ..tools.drawablehelper import MaterialConverter, set_recommended_bone_prope
 from ..tools.boundhelper import convert_obj_to_composite, convert_objs_to_single_composite
 from ..tools.blenderhelper import add_armature_modifier, add_child_of_bone_constraint, create_blender_object, create_empty_object, duplicate_object, get_child_of_constraint, set_child_of_constraint_space, tag_redraw
 from ..sollumz_helper import get_sollumz_materials
-from .properties import DrawableShaderOrder, LightProperties, get_light_presets_path, load_light_presets, light_presets
+from .properties import DrawableShaderOrder, LightProperties, get_light_presets_path, load_light_presets, light_presets, get_shader_presets_path, load_shader_presets, shader_presets
+from ..tools.meshhelper import (
+    mesh_add_missing_uv_maps,
+    mesh_add_missing_color_attrs,
+    mesh_rename_uv_maps_by_order,
+    mesh_rename_color_attrs_by_order,
+)
+from ..shared.shader_nodes import SzShaderNodeParameter
+from ..cwxml.shader import ShaderParameterFloatVectorDef, ShaderParameterTextureDef, ShaderManager
 
 
 class SOLLUMZ_OT_create_drawable(bpy.types.Operator):
@@ -103,7 +116,12 @@ class SOLLUMZ_OT_convert_to_drawable(bpy.types.Operator):
                 drawable_obj = convert_obj_to_drawable(obj, sollum_game_type)
 
                 if auto_embed_col:
-                    composite_obj = convert_obj_to_composite(duplicate_object(obj), SollumType.BOUND_GEOMETRYBVH, True, sollum_game_type)
+                    composite_obj = convert_obj_to_composite(
+                        duplicate_object(obj),
+                        SollumType.BOUND_GEOMETRYBVH,
+                        sollum_game_type,
+                        context.window_manager.sz_flag_preset_index
+                    )
                     composite_obj.parent = drawable_obj
                     composite_obj.name = f"{drawable_obj.name}.col"
 
@@ -127,7 +145,12 @@ class SOLLUMZ_OT_convert_to_drawable(bpy.types.Operator):
 
             if auto_embed_col:
                 col_objs = [duplicate_object(o) for o in selected_meshes]
-                composite_obj = convert_objs_to_single_composite(col_objs, SollumType.BOUND_GEOMETRYBVH, True, sollum_game_type)
+                composite_obj = convert_objs_to_single_composite(
+                    col_objs,
+                    SollumType.BOUND_GEOMETRYBVH,
+                    sollum_game_type,
+                    context.window_manager.sz_flag_preset_index
+                )
                 composite_obj.parent = drawable_obj
 
 
@@ -155,21 +178,37 @@ class SOLLUMZ_OT_convert_to_drawable_model(bpy.types.Operator):
 
 
 class SOLLUMZ_OT_create_light(SOLLUMZ_OT_base, bpy.types.Operator):
+    """Creates a light. Applies the selected preset to the new light."""
     bl_idname = "sollumz.create_light"
     bl_label = "Create Light"
     bl_action = bl_label
 
     def run(self, context):
-        light_type = context.scene.create_light_type
+        scene = context.scene
+        cursor_loc = scene.cursor.location
+        light_type = scene.create_light_type
+        active_obj = context.active_object
         blender_light_type = "POINT"
         if light_type == LightType.SPOT:
             blender_light_type = "SPOT"
 
         light_data = bpy.data.lights.new(name=SOLLUMZ_UI_NAMES[light_type], type=blender_light_type)
         light_data.sollum_type = light_type
-        obj = bpy.data.objects.new(name=SOLLUMZ_UI_NAMES[light_type], object_data=light_data)
-        obj.sollum_type = SollumType.LIGHT
-        bpy.context.collection.objects.link(obj)
+        light_obj = bpy.data.objects.new(name=SOLLUMZ_UI_NAMES[light_type], object_data=light_data)
+        light_obj.sollum_type = SollumType.LIGHT
+        context.collection.objects.link(light_obj)
+        context.view_layer.objects.active = light_obj
+
+        if active_obj and active_obj.sollum_type in [SollumType.DRAWABLE_MODEL, SollumType.DRAWABLE]:
+            light_obj.parent = active_obj.parent if active_obj.sollum_type == SollumType.DRAWABLE_MODEL else active_obj
+            light_obj.matrix_world.translation = cursor_loc
+        else:
+            light_obj.location = cursor_loc
+
+        # Apply light preset
+        bpy.ops.object.select_all(action="DESELECT")  # Deselect everything to avoid applying the preset to other lights
+        light_obj.select_set(True)
+        bpy.ops.sollumz.load_light_preset()
 
 
 class SOLLUMZ_OT_save_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
@@ -262,13 +301,13 @@ class SOLLUMZ_OT_save_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
 class SOLLUMZ_OT_load_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
     """Apply a light preset to the selected light(s)"""
     bl_idname = "sollumz.load_light_preset"
-    bl_label = "Apply Light Preset"
+    bl_label = "Apply Light Preset to Selected"
     bl_context = "object"
     bl_options = {"REGISTER", "UNDO"}
     bl_action = f"{bl_label}"
 
     def run(self, context):
-        index = context.scene.light_preset_index
+        index = context.window_manager.sz_light_preset_index
         selected_lights = []
         for obj in bpy.context.selected_objects:
             if obj.type == 'LIGHT':
@@ -325,6 +364,7 @@ class SOLLUMZ_OT_delete_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
     bl_action = f"{bl_label}"
 
     preset_blacklist = [
+        "Default",
         "Point: Wall Light 1",
         "Spot: Wall Light 1",
         "Point: Wall Light 2",
@@ -333,7 +373,7 @@ class SOLLUMZ_OT_delete_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
     ]
 
     def run(self, context):
-        index = context.scene.light_preset_index
+        index = context.window_manager.sz_light_preset_index
         load_light_presets()
         filepath = get_light_presets_path()
 
@@ -360,6 +400,211 @@ class SOLLUMZ_OT_delete_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
             return False
 
 
+def shader_preset_from_material(material: bpy.types.Material) -> ShaderPreset:
+    preset = ShaderPreset()
+    shader_def = ShaderManager.find_shader(material.shader_properties.filename)
+
+    for node in material.node_tree.nodes:
+        param_def = shader_def.parameter_map.get(node.name, None)
+        if param_def is None:
+            continue
+
+        if (
+            isinstance(node, SzShaderNodeParameter) and
+            isinstance(param_def, ShaderParameterFloatVectorDef) and
+            not param_def.is_array
+        ):
+            param = ShaderPresetParam()
+            param.name = node.name
+            param.x = node.get(0)
+            param.y = node.get(1) if node.num_cols > 1 else None
+            param.z = node.get(2) if node.num_cols > 2 else None
+            param.w = node.get(3) if node.num_cols > 3 else None
+            preset.params.append(param)
+        elif (
+            isinstance(node, bpy.types.ShaderNodeTexImage) and
+            isinstance(param_def, ShaderParameterTextureDef)
+        ):
+            param = ShaderPresetParam()
+            param.name = node.name
+            param.texture = node.sollumz_texture_name
+            preset.params.append(param)
+
+    return preset
+
+
+def shader_preset_apply_to_material(material: bpy.types.Material, preset: ShaderPreset, apply_textures: bool = True):
+    shader_def = ShaderManager.find_shader(material.shader_properties.filename)
+
+    for param in preset.params:
+        param_def = shader_def.parameter_map.get(param.name, None)
+        if param_def is None:
+            continue
+
+        node = material.node_tree.nodes.get(param.name, None)
+        if node is None:
+            continue
+
+        if (
+            isinstance(node, SzShaderNodeParameter) and
+            isinstance(param_def, ShaderParameterFloatVectorDef) and
+            not param_def.is_array
+        ):
+            if node.num_cols > 0 and param.x is not None:
+                node.set(0, param.x)
+            if node.num_cols > 1 and param.y is not None:
+                node.set(1, param.y)
+            if node.num_cols > 2 and param.z is not None:
+                node.set(2, param.z)
+            if node.num_cols > 3 and param.w is not None:
+                node.set(3, param.w)
+        elif apply_textures and (
+            isinstance(node, bpy.types.ShaderNodeTexImage) and
+            isinstance(param_def, ShaderParameterTextureDef)
+        ):
+            # Try to get a loaded image...
+            img = bpy.data.images.get(param.texture, None) or bpy.data.images.get(f"{param.texture}.dds", None)
+            if not img:
+                # Otherwise, search in the shared textures directories
+                from .ydrimport import lookup_texture_file, is_non_color_texture
+                texture_path = lookup_texture_file(param.texture, None)
+                img = texture_path and bpy.data.images.load(str(texture_path), check_existing=True)
+                if img and is_non_color_texture(shader_def.filename, param.name):
+                    img.colorspace_settings.is_data = True
+
+            if img:
+                node.image = img
+
+
+class SOLLUMZ_OT_save_shader_preset(SOLLUMZ_OT_base, bpy.types.Operator):
+    """Save a shader preset of the active material"""
+    bl_idname = "sollumz.save_shader_preset"
+    bl_label = "Save Shader Preset"
+    bl_action = f"{bl_label}"
+
+    name: bpy.props.StringProperty(name="Name")
+
+    @classmethod
+    def poll(cls, context):
+        aobj = context.active_object
+        mat = aobj and aobj.active_material
+        if mat is None or mat.sollum_type != MaterialType.SHADER:
+            cls.poll_message_set("No Sollumz shader material selected.")
+            return False
+
+        return True
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def run(self, context):
+        self.name = self.name.strip()
+
+        if len(self.name) == 0:
+            self.warning("Please specify a name for the new shader preset.")
+            return False
+
+        mat = context.active_object.active_material
+        if not mat:
+            self.warning("No material selected!")
+            return False
+
+        load_shader_presets()
+
+        for preset in shader_presets.presets:
+            if preset.name == self.name:
+                self.warning(
+                    "A preset with that name already exists! If you wish to overwrite this preset, delete the original.")
+                return False
+
+        shader_preset = shader_preset_from_material(mat)
+        shader_preset.name = self.name
+        shader_presets.presets.append(shader_preset)
+
+        filepath = get_shader_presets_path()
+        shader_presets.write_xml(filepath)
+        load_shader_presets()
+
+        self.message(f"Saved preset '{shader_preset.name}'!")
+
+        tag_redraw(context, space_type="VIEW_3D", region_type="UI")
+        return True
+
+
+class SOLLUMZ_OT_load_shader_preset(SOLLUMZ_OT_base, bpy.types.Operator):
+    """Apply a shader preset to the active material"""
+    bl_idname = "sollumz.load_shader_preset"
+    bl_label = "Apply Shader Preset to Selected"
+    bl_context = "object"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_action = f"{bl_label}"
+
+    apply_textures: BoolProperty(name="Apply Textures", default=True)
+
+    @classmethod
+    def poll(cls, context):
+        aobj = context.active_object
+        mat = aobj and aobj.active_material
+        if mat is None or mat.sollum_type != MaterialType.SHADER:
+            cls.poll_message_set("No Sollumz shader material selected.")
+            return False
+
+        wm = context.window_manager
+        if not (0 <= wm.sz_shader_preset_index < len(wm.sz_shader_presets)):
+            cls.poll_message_set("No shader preset available.")
+            return False
+
+        return True
+
+    def run(self, context):
+        index = context.window_manager.sz_shader_preset_index
+        mat = context.active_object.active_material
+        if not mat:
+            self.warning("No shaders selected!")
+            return False
+
+        load_shader_presets()
+        shader_preset: ShaderPreset = shader_presets.presets[index]
+        shader_preset_apply_to_material(mat, shader_preset, apply_textures=self.apply_textures)
+        self.message(f"Applied preset '{shader_preset.name}' to {mat.name} material.")
+        return True
+
+
+class SOLLUMZ_OT_delete_shader_preset(SOLLUMZ_OT_base, bpy.types.Operator):
+    """Delete the selected shader preset"""
+    bl_idname = "sollumz.delete_shader_preset"
+    bl_label = "Delete Shader Preset"
+    bl_action = f"{bl_label}"
+
+    @classmethod
+    def poll(cls, context):
+        wm = context.window_manager
+        return 0 <= wm.sz_shader_preset_index < len(wm.sz_shader_presets)
+
+    def run(self, context):
+        index = context.window_manager.sz_shader_preset_index
+        load_shader_presets()
+        filepath = get_shader_presets_path()
+
+        try:
+            preset = shader_presets.presets[index]
+            shader_presets.presets.remove(preset)
+
+            try:
+                shader_presets.write_xml(filepath)
+                load_shader_presets()
+
+                return True
+            except:
+                self.error(f"Error during deletion of shader preset: {traceback.format_exc()}")
+                return False
+
+        except IndexError:
+            self.warning(
+                f"Shader preset does not exist! Ensure the preset file is present in the '{filepath}' directory.")
+            return False
+
+
 class MaterialConverterHelper:
     bl_options = {"UNDO"}
 
@@ -375,7 +620,7 @@ class MaterialConverterHelper:
         materials = shadermats
         if sollum_game_type == SollumzGame.RDR:
             materials = rdr_shadermats
-        return materials[bpy.context.scene.shader_material_index].value
+        return materials[bpy.context.window_manager.sz_shader_material_index].value
 
     def convert_material(self, obj: bpy.types.Object, material: bpy.types.Material) -> bpy.types.Material | None:
         sollum_game_type = bpy.context.scene.sollum_game_type
@@ -417,7 +662,7 @@ class SOLLUMZ_OT_convert_material_to_selected(bpy.types.Operator, MaterialConver
 
 
 class SOLLUMZ_OT_auto_convert_material(bpy.types.Operator, MaterialConverterHelper):
-    """Attempt to automatically determine shader name from material node setup and convert the material to a Sollumz material."""
+    """Attempt to automatically determine shader name from material node setup and convert the material to a Sollumz material"""
     bl_idname = "sollumz.autoconvertmaterial"
     bl_label = "Convert Material To Shader Material"
 
@@ -428,31 +673,54 @@ class SOLLUMZ_OT_auto_convert_material(bpy.types.Operator, MaterialConverterHelp
         return MaterialConverter(obj, material).auto_convert()
 
 
+def post_create_shader_add_default_images(material: bpy.types.Material):
+    for n in material.node_tree.nodes:
+        if isinstance(n, bpy.types.ShaderNodeTexImage) and not n.image:
+            # TODO: don't create new texture for hidden texture parameters
+            # TODO: should we reuse the image
+            texture = bpy.data.images.new(name="Texture", width=512, height=512)
+            n.image = texture
+
+
+def post_create_shader_update_object(obj: bpy.types.Object, material: bpy.types.Material):
+    mesh = obj.data
+
+    # First, try renaming to avoid creating more attributes than needed if the mesh already has some
+    mesh_rename_uv_maps_by_order(mesh)
+    mesh_rename_color_attrs_by_order(mesh)
+
+    # Then, just add the remaining attributes required by the shader
+    mesh_add_missing_uv_maps(mesh)
+    mesh_add_missing_color_attrs(mesh)
+
+    if is_tint_material(material):
+        create_tinted_shader_graph(obj)
+
+
 class SOLLUMZ_OT_create_shader_material(SOLLUMZ_OT_base, bpy.types.Operator):
     """Create a sollumz shader material"""
     bl_idname = "sollumz.createshadermaterial"
     bl_label = "Create Shader Material"
     bl_action = "Create a Shader Material"
 
-    def create_material(self, context, obj, shader, game):
-        mat = create_shader(shader, game)
-        obj.data.materials.append(mat)
+    shader_index: IntProperty(name="Shader Index", min=0, max=len(shadermats) - 1)
 
-        for n in mat.node_tree.nodes:
-            if isinstance(n, bpy.types.ShaderNodeTexImage):
-                texture = bpy.data.images.new(
-                    name="Texture", width=512, height=512)
-                n.image = texture
+    def create_material(self, context, obj, shader_filename, game):
+        if obj.type != "MESH":
+            self.warning(f"Object {obj.name} is not a mesh and will be skipped.")
+            return
 
-        if is_tint_material(mat):
-            create_tinted_shader_graph(obj)
+        mesh = obj.data
+        mat = create_shader(shader_filename, game)
+        mesh.materials.append(mat)
+        post_create_shader_add_default_images(mat)
+        post_create_shader_update_object(obj, mat)
+        self.message(f"Added a {shader_filename} shader to {obj.name}.")
 
     def run(self, context):
-
         objs = bpy.context.selected_objects
         if len(objs) == 0:
-            self.warning(
-                f"Please select a object to add a shader material to.")
+            self.warning("Please select a object to add a shader material to.")
             return False
         
         sollum_game_type = context.scene.sollum_game_type
@@ -460,15 +728,50 @@ class SOLLUMZ_OT_create_shader_material(SOLLUMZ_OT_base, bpy.types.Operator):
         if sollum_game_type == SollumzGame.RDR:
             materials = rdr_shadermats
 
+        shader_filename = materials[self.shader_index].value
         for obj in objs:
-            shader = materials[context.scene.shader_material_index].value
             try:
-                self.create_material(context, obj, shader, sollum_game_type)
-                self.message(f"Added a {shader} shader to {obj.name}.")
+                self.create_material(context, obj, shader_filename, sollum_game_type)
             except:
-                self.message(
-                    f"Failed adding {shader} to {obj.name} because : \n {traceback.format_exc()}")
+                self.message(f"Failed adding {shader_filename} to {obj.name} because : \n {traceback.format_exc()}")
 
+        return True
+
+
+class SOLLUMZ_OT_change_shader(SOLLUMZ_OT_base, bpy.types.Operator):
+    """Change the shader used by the active material"""
+    bl_idname = "sollumz.change_shader"
+    bl_label = "Change Shader"
+    bl_action = "Change Shader of Material"
+
+    shader_index: IntProperty(name="Shader Index", min=0, max=len(shadermats) - 1)
+
+    @classmethod
+    def poll(cls, context):
+        aobj = context.active_object
+        return (
+            aobj and
+            aobj.type == "MESH" and
+            aobj.active_material and
+            aobj.active_material.sollum_type == MaterialType.SHADER
+        )
+
+    def run(self, context):
+        aobj = context.active_object
+        mat = aobj.active_material
+        old_shader_filename = mat.shader_properties.filename
+        new_shader_filename = shadermats[self.shader_index].value
+
+        tmp_preset = shader_preset_from_material(mat)
+        create_shader(new_shader_filename, in_place_material=mat)
+        shader_preset_apply_to_material(mat, tmp_preset, apply_textures=True)
+
+        post_create_shader_add_default_images(mat)
+        for obj in bpy.data.objects:  # update all objects that are using this material
+            if obj.type == "MESH" and mat.name in obj.data.materials:
+                post_create_shader_update_object(obj, mat)
+
+        self.message(f"Changed {old_shader_filename} shader to {new_shader_filename}.")
         return True
 
 
@@ -816,7 +1119,7 @@ class OperatorMoveShaderUpBase:
             return False
 
         drawable_props = aobj.drawable_properties
-        num_shaders = len(drawable_props.shader_order.items)
+        num_shaders = len(drawable_props.shader_order.order_items)
         shader_ind = drawable_props.shader_order.get_active_shader_item_index()
 
         return shader_ind < num_shaders and shader_ind != 0
@@ -845,7 +1148,7 @@ class OperatorMoveShaderDownBase:
             return False
 
         drawable_props = aobj.drawable_properties
-        num_shaders = len(drawable_props.shader_order.items)
+        num_shaders = len(drawable_props.shader_order.order_items)
         shader_ind = drawable_props.shader_order.get_active_shader_item_index()
 
         return shader_ind < num_shaders - 1 and num_shaders > 1
@@ -904,7 +1207,7 @@ class SOLLUMZ_OT_order_shaders(bpy.types.Operator):
         row = layout.row()
         col = row.column()
 
-        col.template_list("SOLLUMZ_UL_SHADER_ORDER_LIST", "", shader_order, "items",
+        col.template_list("SOLLUMZ_UL_SHADER_ORDER_LIST", "", shader_order, "order_items",
                           shader_order, "active_index", maxrows=40)
 
         col = row.column()
@@ -934,10 +1237,10 @@ class SOLLUMZ_OT_order_shaders(bpy.types.Operator):
         mats = get_sollumz_materials(drawable_obj)
         self.validate_indices(mats)
 
-        shader_order.items.clear()
+        shader_order.order_items.clear()
 
         for mat in mats:
-            item = shader_order.items.add()
+            item = shader_order.order_items.add()
             item.index = mat.shader_properties.index
             item.name = mat.name
             item.filename = mat.shader_properties.filename
@@ -960,13 +1263,13 @@ class SOLLUMZ_OT_order_shaders(bpy.types.Operator):
         shader_order: DrawableShaderOrder = drawable_obj.drawable_properties.shader_order
         mats = get_sollumz_materials(drawable_obj)
 
-        if len(shader_order.items) != len(mats):
+        if len(shader_order.order_items) != len(mats):
             self.report(
                 {"ERROR"}, "Failed to apply order, shader collection size mismatch!")
             return {"CANCELLED"}
 
         for i, mat in enumerate(mats):
-            mat.shader_properties.index = shader_order.items[i].index
+            mat.shader_properties.index = shader_order.order_items[i].index
 
         return {"FINISHED"}
 
@@ -1046,7 +1349,10 @@ class SOLLUMZ_OT_auto_lod(bpy.types.Operator):
     bl_idname = "sollumz.auto_lod"
     bl_label = "Generate LODs"
     bl_options = {"REGISTER", "UNDO"}
-    bl_description = "Generate Drawable Model LODs via decimate modifier. Uses object's current mesh as highest LOD level"
+    bl_description = (
+        "Generate drawable model LODs via decimate modifier. Starts from the selected reference mesh, generating a "
+        "new decimated mesh for each selected LOD level"
+    )
 
     @classmethod
     def poll(self, context):
@@ -1075,6 +1381,7 @@ class SOLLUMZ_OT_auto_lod(bpy.types.Operator):
         previous_lod_level = obj_lods.active_lod_level
 
         for lod_level in lods:
+            bpy.ops.object.mode_set(mode="OBJECT") # make sure we are in object mode before switching LODs
             mesh = last_mesh.copy()
             mesh.name = self.get_lod_mesh_name(aobj.name, lod_level)
 
@@ -1082,12 +1389,15 @@ class SOLLUMZ_OT_auto_lod(bpy.types.Operator):
             obj_lods.active_lod_level = lod_level
 
             bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
             bpy.ops.mesh.decimate(ratio=1.0 - decimate_step)
-            bpy.ops.object.mode_set(mode=previous_mode)
 
             last_mesh = mesh
 
+        bpy.ops.object.mode_set(mode="OBJECT")
         obj_lods.active_lod_level = previous_lod_level
+
+        bpy.ops.object.mode_set(mode=previous_mode)
 
         return {"FINISHED"}
 
@@ -1095,10 +1405,7 @@ class SOLLUMZ_OT_auto_lod(bpy.types.Operator):
         return f"{obj_name}.{SOLLUMZ_UI_NAMES[lod_level].lower()}"
 
     def get_selected_lods_sorted(self, context: Context) -> tuple[LODLevel]:
-        lod_levels = [LODLevel.VERYHIGH, LODLevel.HIGH,
-                      LODLevel.MEDIUM, LODLevel.LOW, LODLevel.VERYLOW]
-
-        return tuple(lod for lod in lod_levels if lod in context.scene.sollumz_auto_lod_levels)
+        return tuple(lod for lod in LODLevel if lod in context.scene.sollumz_auto_lod_levels)
 
 
 class SOLLUMZ_OT_extract_lods(bpy.types.Operator):
@@ -1147,3 +1454,103 @@ class SOLLUMZ_OT_extract_lods(bpy.types.Operator):
                 obj.users_collection[0].objects.unlink(obj)
 
             parent.objects.link(obj)
+
+
+class SOLLUMZ_OT_uv_maps_rename_by_order(bpy.types.Operator):
+    """Rename UV maps based on their order in the list. Does not affect UV maps already in use"""
+    bl_idname = "sollumz.uv_maps_rename_by_order"
+    bl_label = "Rename UV Maps by Order"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(self, context):
+        return context.active_object is not None and context.active_object.sollum_type == SollumType.DRAWABLE_MODEL
+
+    def execute(self, context: bpy.types.Context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if context.active_object.type == "MESH":
+            selected_meshes.append(context.active_object)
+
+        if not selected_meshes:
+            self.report({"INFO"}, "No mesh objects selected!")
+            return {"CANCELLED"}
+
+        for mesh_obj in selected_meshes:
+            mesh_rename_uv_maps_by_order(mesh_obj.data)
+
+        return {"FINISHED"}
+
+
+class SOLLUMZ_OT_uv_maps_add_missing(bpy.types.Operator):
+    """Add the missing UV maps used by the Sollumz shaders of the mesh"""
+    bl_idname = "sollumz.uv_maps_add_missing"
+    bl_label = "Add Missing UV Maps"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(self, context):
+        return context.active_object is not None and context.active_object.sollum_type == SollumType.DRAWABLE_MODEL
+
+    def execute(self, context: bpy.types.Context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if context.active_object.type == "MESH":
+            selected_meshes.append(context.active_object)
+
+        if not selected_meshes:
+            self.report({"INFO"}, "No mesh objects selected!")
+            return {"CANCELLED"}
+
+        for mesh_obj in selected_meshes:
+            mesh_add_missing_uv_maps(mesh_obj.data)
+
+        return {"FINISHED"}
+
+
+class SOLLUMZ_OT_color_attrs_rename_by_order(bpy.types.Operator):
+    """Rename colors attributes based on their order in the list. Does not affect color attributes already in use"""
+    bl_idname = "sollumz.color_attrs_rename_by_order"
+    bl_label = "Rename Color Attributes by Order"
+    bl_options = {"UNDO"}
+
+    @classmethod
+    def poll(self, context):
+        return context.active_object is not None and context.active_object.sollum_type == SollumType.DRAWABLE_MODEL
+
+    def execute(self, context: bpy.types.Context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if context.active_object.type == "MESH":
+            selected_meshes.append(context.active_object)
+
+        if not selected_meshes:
+            self.report({"INFO"}, "No mesh objects selected!")
+            return {"CANCELLED"}
+
+        for mesh_obj in selected_meshes:
+            mesh_rename_color_attrs_by_order(mesh_obj.data)
+
+        return {"FINISHED"}
+
+
+class SOLLUMZ_OT_color_attrs_add_missing(bpy.types.Operator):
+    """Add the missing color attributes used by the Sollumz shaders of the mesh"""
+    bl_idname = "sollumz.color_attrs_add_missing"
+    bl_label = "Add Missing Color Attributes"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(self, context):
+        return context.active_object is not None and context.active_object.sollum_type == SollumType.DRAWABLE_MODEL
+
+    def execute(self, context: bpy.types.Context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if context.active_object.type == "MESH":
+            selected_meshes.append(context.active_object)
+
+        if not selected_meshes:
+            self.report({"INFO"}, "No mesh objects selected!")
+            return {"CANCELLED"}
+
+        for mesh_obj in selected_meshes:
+            mesh_add_missing_color_attrs(mesh_obj.data)
+
+        return {"FINISHED"}

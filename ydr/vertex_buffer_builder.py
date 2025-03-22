@@ -5,10 +5,19 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Tuple, Optional
 from mathutils import Vector
-from ..tools.meshhelper import flip_uvs
+from ..tools.meshhelper import (
+    flip_uvs,
+    get_mesh_used_colors_indices,
+    get_mesh_used_texcoords_indices,
+    get_color_attr_name,
+    get_uv_map_name,
+)
 from ..cwxml.drawable import VertexBuffer
 
+from .. import logger
+
 current_game = SollumzGame.GTA
+
 
 def get_bone_by_vgroup(vgroups: bpy.types.VertexGroups, bones: list[bpy.types.Bone]):
     bone_ind_by_name: dict[str, int] = {b.name: i for i, b in enumerate(bones)}
@@ -122,14 +131,10 @@ class VertexBufferBuilder:
                 mesh_attrs["BlendIndices1"] = data[3]
 
         colors = self._get_colors()
-
-        for i, color in enumerate(colors):
-            mesh_attrs[f"Colour{i}"] = color
+        mesh_attrs.update(colors)
 
         uvs = self._get_uvs()
-
-        for i, uv in enumerate(uvs):
-            mesh_attrs[f"TexCoord{i}"] = uv
+        mesh_attrs.update(uvs)
 
         return mesh_attrs
 
@@ -189,8 +194,14 @@ class VertexBufferBuilder:
             ind_arr = np.zeros((num_verts, 8), dtype=np.uint32)
             weights_arr = np.zeros((num_verts, 8), dtype=np.float32)
 
+        ungrouped_verts = 0
+
         for i, vert in enumerate(self.mesh.vertices):
             groups = self._get_sorted_vertex_group_elements(vert)
+            if not groups:
+                ungrouped_verts += 1
+                continue
+
             for j, grp in enumerate(groups):
                 if j < 4:
                     weights_arr[i][j] = grp.weight
@@ -218,22 +229,30 @@ class VertexBufferBuilder:
         elif current_game == SollumzGame.RDR:
             weights_arr = self._convert_to_int_range(weights_arr)
             weights_arr2 = self._convert_to_int_range(weights_arr2)
-            
+
             # Combine both weight arrays into one so renomalization can be done for all 8 weights in a vertex
             weights_arr_whole = np.concatenate((weights_arr, weights_arr2), axis=1)
-            
+
             # Renormalize all 8 weights so they all sum 255
             weights_arr_whole = self._renormalize_converted_weights(weights_arr_whole)
-            
+
             # Split the weights back to their respective arrays
             weights_arr, weights_arr2 = np.hsplit(weights_arr_whole, 2)
+
+        if ungrouped_verts != 0:
+            logger.warning(
+                f"Mesh '{self.mesh.name}' has {ungrouped_verts} vertices not weighted to any vertex group! "
+                "These vertices will be weighted to the root bone which may cause parts to float in-game. "
+                "In Edit Mode, you can use 'Select > Select All by Trait > Ungrouped vertices' to select "
+                "these vertices."
+            )
 
         # Return on loop domain
         if current_game == SollumzGame.GTA:
             return [weights_arr[self._vert_inds], ind_arr[self._vert_inds]]
         elif current_game == SollumzGame.RDR:
             return [weights_arr[self._vert_inds], ind_arr[self._vert_inds], weights_arr2[self._vert_inds], ind_arr2[self._vert_inds]]
-        
+
     def _get_sorted_vertex_group_elements(self, vertex: bpy.types.MeshVertex) -> list[bpy.types.VertexGroupElement]:
         elements = []
         bone_by_vgroup = self._bone_by_vgroup
@@ -249,7 +268,7 @@ class VertexBufferBuilder:
         # sort by weight so the groups with less influence are to be ignored
         elements = sorted(elements, reverse=True, key=lambda e: e.weight)
         return elements
-    
+
     def _sort_weights_inds(self, weights_arr: NDArray[np.float32], ind_arr: NDArray[np.uint32]):
         """Sort BlendWeights and BlendIndices."""
         # Blend weights and indices are sorted by weights in ascending order starting from the 3rd index and continues to the left
@@ -285,54 +304,45 @@ class VertexBufferBuilder:
         np.put_along_axis(result, max_indices, normalized_max_values, axis=1)
         return result
 
-    def _get_colors(self) -> list[NDArray[np.uint32]]:
+    def _get_colors(self) -> dict[str, NDArray[np.uint32]]:
         num_loops = len(self.mesh.loops)
+        color_layers = {}
+        for color_idx in get_mesh_used_colors_indices(self.mesh):
+            color_attr_name = get_color_attr_name(color_idx)
+            color_attr = self.mesh.color_attributes.get(color_attr_name, None)
+            if color_attr is None:
+                continue
 
-        def _is_valid_color_attr(attr: bpy.types.Attribute):
-            return (attr.domain == "CORNER" and
-                    # `TintColor` only used for the tint shaders/geometry nodes
-                    not attr.name.startswith("TintColor") and
-                    # Name prefixed by `.` indicate a reserved attribute name for Blender
-                    # e.g. `.a_1234` for anonymous attributes
-                    # https://projects.blender.org/blender/blender/issues/97452
-                    not attr.name.startswith("."))
+            if color_attr.domain != "CORNER" or color_attr.data_type != "BYTE_COLOR":
+                # Not in the correct format, ignore it
+                continue
 
-        color_attrs = [attr for attr in self.mesh.color_attributes if _is_valid_color_attr(attr)]
-        if current_game == SollumzGame.GTA:
-            # Maximum of 2 color attributes for GTAV shaders
-            color_attrs = color_attrs[:2]
-
-        # Always have at least 1 color layer
-        if len(color_attrs) == 0:
-            return [np.full((len(self._vert_inds), 4), 255, dtype=np.uint32)]
-
-        color_layers = []
-
-        for color_attr in color_attrs:
             colors = np.empty(num_loops * 4, dtype=np.float32)
             color_attr.data.foreach_get("color_srgb", colors)
 
             colors = self._convert_to_int_range(colors)
+            colors = np.reshape(colors, (num_loops, 4))
 
-            color_layers.append(np.reshape(colors, (num_loops, 4)))
+            color_layers[f"Colour{color_idx}"] = colors
 
         return color_layers
 
-    def _get_uvs(self) -> list[NDArray[np.float32]]:
+    def _get_uvs(self) -> dict[str, NDArray[np.float32]]:
         num_loops = len(self.mesh.loops)
-        # UV mesh attributes (maximum of 8 for GTAV shaders)
-        uv_attrs = [attr for attr in self.mesh.attributes if attr.data_type ==
-                    'FLOAT2' and attr.domain == 'CORNER'][:8]
-        uv_layers: list[NDArray[np.float32]] = []
+        uv_layers = {}
+        for uvmap_idx in get_mesh_used_texcoords_indices(self.mesh):
+            uvmap_attr_name = get_uv_map_name(uvmap_idx)
+            uvmap_attr = self.mesh.uv_layers.get(uvmap_attr_name, None)
+            if uvmap_attr is None:
+                continue
 
-        for uv_attr in uv_attrs:
             uvs = np.empty(num_loops * 2, dtype=np.float32)
-            uv_attr.data.foreach_get("vector", uvs)
+            uvmap_attr.uv.foreach_get("vector", uvs)
             uvs = np.reshape(uvs, (num_loops, 2))
 
             flip_uvs(uvs)
 
-            uv_layers.append(uvs)
+            uv_layers[f"TexCoord{uvmap_idx}"] = uvs
 
         return uv_layers
 

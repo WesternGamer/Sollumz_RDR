@@ -4,7 +4,7 @@ import traceback
 from ..cwxml.flag_preset import FlagPreset
 from ..ybn.properties import BoundFlags, RDRBoundFlags, load_flag_presets, flag_presets, get_flag_presets_path
 from ..ybn.collision_materials import create_collision_material_from_index
-from ..tools.boundhelper import create_bound_shape, convert_objs_to_composites, convert_objs_to_single_composite, center_composite_to_children
+from ..tools.boundhelper import create_bound_shape, convert_objs_to_composites, convert_objs_to_single_composite, center_composite_to_children, apply_flag_preset
 from ..tools.meshhelper import create_box_from_extents
 from ..sollumz_properties import SollumType, SOLLUMZ_UI_NAMES, BOUND_TYPES, MaterialType, BOUND_POLYGON_TYPES, SollumzGame
 from ..sollumz_helper import SOLLUMZ_OT_base
@@ -40,46 +40,72 @@ class SOLLUMZ_OT_create_polygon_bound(bpy.types.Operator):
 
 
 class SOLLUMZ_OT_create_polygon_box_from_verts(bpy.types.Operator):
-    """Create a Bound Polygon Box from the selected vertices (must be in edit mode)"""
+    """Creates a Bound Box or Bound Poly Box from the selected vertices"""
     bl_idname = "sollumz.createpolyboxfromverts"
-    bl_label = "Create Box From Selection"
-    bl_options = {"UNDO"}
+    bl_label = "Create Box from Selection"
+    bl_options = {"UNDO", "REGISTER"}
+
+    parent_name: bpy.props.StringProperty(
+        name="Parent",
+        description="Parent for the new box object. If not set, the parent of the active object is used."
+    )
+    num_samples: bpy.props.IntProperty(
+        name="Number of Samples",
+        description="Number of samples to use to find the best orientation for the bounding box",
+        default=100,
+        min=1,
+        max=1000
+    )
+    angle_step: bpy.props.IntProperty(
+        name="Range Precision",
+        description="Amount of angle steps to skip, this can be useful in situations where number of samples alone doesn't give a precise result. Lower values mean higher precision",
+        default=2,
+        min=1,
+        max=10
+    )
+    sollum_type: bpy.props.EnumProperty(
+        items=[
+            (SollumType.BOUND_POLY_BOX.value, SOLLUMZ_UI_NAMES[SollumType.BOUND_POLY_BOX], "Create a bound polygon box object"),
+            (SollumType.BOUND_BOX.value, SOLLUMZ_UI_NAMES[SollumType.BOUND_BOX], "Create a bound box object")],
+        name="Type",
+        default=None
+    )
 
     @classmethod
     def poll(self, context):
-        return context.active_object is not None and context.active_object.mode == "EDIT"
+        self.poll_message_set("Must be in Edit Mode.")
+        return context.mode == "EDIT_MESH"
 
     def execute(self, context):
         sollum_type = context.scene.poly_bound_type_verts
         sollum_game_type = context.scene.sollum_game_type
-        selected = context.selected_objects
-
-        if len(selected) < 1 and context.active_object:
-            selected = [context.active_object]
-
-        verts = []
-        for obj in selected:
+        objects = context.objects_in_mode
+        verts: list[Vector] = []
+        for obj in objects:
             verts.extend(get_selected_vertices(obj))
 
-        if selected and len(selected) == 1:
-            parent = selected[0].parent
-        else:
-            parent = None
+        parent = None
+        if self.parent_name:
+            parent = bpy.data.objects.get(self.parent_name, None)
+
+        if not parent and objects:
+            # If no explicit parent chosen by the user, place it as sibling of the active object
+            # First object in objects_in_mode is the active object
+            parent = objects[0].parent
 
         if len(verts) < 3:
             self.report({"INFO"}, "Please select at least three vertices.")
             return {"CANCELLED"}
 
-        pobj = create_blender_object(sollum_type)
+        pobj = create_blender_object(self.sollum_type)
 
-        obb, world_matrix = get_obb(verts)
+        obb, world_matrix = get_obb(verts, self.num_samples, self.angle_step)
         bbmin, bbmax = get_obb_extents(obb)
 
         center = world_matrix @ (bbmin + bbmax) / 2
         local_center = (bbmin + bbmax) / 2
 
-        create_box_from_extents(
-            pobj.data, bbmin - local_center, bbmax - local_center)
+        create_box_from_extents(pobj.data, bbmin - local_center, bbmax - local_center)
 
         pobj.matrix_world = world_matrix
         pobj.location = center
@@ -94,7 +120,7 @@ class SOLLUMZ_OT_create_polygon_box_from_verts(bpy.types.Operator):
 
 
 class SOLLUMZ_OT_convert_to_composite(bpy.types.Operator):
-    """Convert the selected object to a Bound Composite"""
+    """Convert the selected object to a Bound Composite. Applies the selected flag preset to the created bounds"""
     bl_idname = "sollumz.converttocomposite"
     bl_label = "Convert to Composite"
     bl_options = {"UNDO"}
@@ -109,29 +135,30 @@ class SOLLUMZ_OT_convert_to_composite(bpy.types.Operator):
 
         bound_child_type = context.scene.bound_child_type
         sollum_game_type = context.scene.sollum_game_type
-        apply_default_flags = context.scene.composite_apply_default_flag_preset
         do_center = context.scene.center_composite_to_selection
+
+        flag_preset_index = context.window_manager.sz_flag_preset_index
 
         if context.scene.create_seperate_composites or len(selected_meshes) == 1:
             convert_objs_to_composites(
-                selected_meshes, bound_child_type, apply_default_flags, sollum_game_type)
+                selected_meshes, bound_child_type, sollum_game_type, flag_preset_index)
         else:
             composite_obj = convert_objs_to_single_composite(
-                selected_meshes, bound_child_type, apply_default_flags, sollum_game_type)
+                selected_meshes, bound_child_type, sollum_game_type, flag_preset_index)
 
             if do_center:
                 center_composite_to_children(composite_obj)
 
-        self.report(
-            {"INFO"}, f"Succesfully converted all selected objects to a Composite.")
+        self.report({"INFO"}, f"Succesfully converted all selected objects to a Composite.")
 
         return {"FINISHED"}
 
 
 class SOLLUMZ_OT_create_bound(bpy.types.Operator):
-    """Create a sollumz bound of the selected type"""
+    """Create a Sollumz bound of the selected type. Applies the selected flag preset to the created bound"""
     bl_idname = "sollumz.createbound"
     bl_label = "Create Bound"
+    bl_options = {"UNDO"}
 
     def execute(self, context):
         bound_type = context.scene.create_bound_type
@@ -143,26 +170,19 @@ class SOLLUMZ_OT_create_bound(bpy.types.Operator):
         else:
             parent = None
 
+        # Check the bound type and create the appropriate object
         if bound_type in [SollumType.BOUND_COMPOSITE, SollumType.BOUND_GEOMETRYBVH]:
-            bound_obj = create_empty_object(bound_type)
-            bound_obj.parent = parent
-            if parent:
-                bound_obj.sollum_game_type = parent.sollum_game_type
-            else:
-                bound_obj.sollum_game_type = sollum_game_type
-
-            return {"FINISHED"}
-
-        bound_obj = create_bound_shape(bound_type)
-
-        if bound_obj is None:
-            return {"CANCELLED"}
+            bound_obj = create_empty_object(bound_type)  # Create an empty for composites and BVH
+        else:
+            bound_obj = create_bound_shape(bound_type)  # Create shape for other bounds
 
         bound_obj.parent = parent
         if parent:
             bound_obj.sollum_game_type = parent.sollum_game_type
         else:
             bound_obj.sollum_game_type = sollum_game_type
+
+        apply_flag_preset(bound_obj, context.window_manager.sz_flag_preset_index)
 
         return {"FINISHED"}
 
@@ -183,7 +203,8 @@ class CreateCollisionMatHelper:
 
             return {"CANCELLED"}
 
-        mat_index = context.scene.collision_material_index
+        mat_index = context.window_manager.sz_collision_material_index
+
         for obj in selected:
             if obj.type != "MESH":
                 continue
@@ -199,7 +220,7 @@ class SOLLUMZ_OT_create_collision_material(CreateCollisionMatHelper, bpy.types.O
 
 
 class SOLLUMZ_OT_clear_and_create_collision_material(CreateCollisionMatHelper, bpy.types.Operator):
-    """Delete all materials on selected object(s) and add selected collision material."""
+    """Delete all materials on selected object(s) and add selected collision material"""
     bl_idname = "sollumz.clearandcreatecollisionmaterial"
     bl_label = "Clear and Create Collision Material"
 
@@ -209,7 +230,7 @@ class SOLLUMZ_OT_clear_and_create_collision_material(CreateCollisionMatHelper, b
 
 
 class SOLLUMZ_OT_convert_non_collision_materials_to_selected(CreateCollisionMatHelper, bpy.types.Operator):
-    """Convert all non-collision materials to the selected collision material."""
+    """Convert all non-collision materials to the selected collision material"""
     bl_idname = "sollumz.convertnoncollisionmaterialstoselected"
     bl_label = "Convert Non-Collision Materials To Selected"
 
@@ -240,106 +261,9 @@ class SOLLUMZ_OT_convert_to_collision_material(SOLLUMZ_OT_base, bpy.types.Operat
             self.message("No material selected!")
             return False
 
-        mat = create_collision_material_from_index(
-            context.scene.collision_material_index)
+        mat = create_collision_material_from_index(context.window_manager.sz_collision_material_index)
         active_mat_index = aobj.active_material_index
         aobj.data.materials[active_mat_index] = mat
-
-
-class SOLLUMZ_OT_split_collision(SOLLUMZ_OT_base, bpy.types.Operator):
-    """Split a collision into many parts. Sorted based on location"""
-    bl_idname = "sollumz.splitcollision"
-    bl_label = "Split Collision"
-    bl_action = f"{bl_label}"
-
-    def run(self, context):
-        selected = context.selected_objects
-        if len(selected) < 1:
-            self.message("No objects selected.")
-            return False
-
-        # Gather all selected collision objects and store as hierarchy
-        selected_composites = {}
-        num_bound_polys_selected = 0
-        for composite in selected:
-            if composite.sollum_type != SollumType.BOUND_COMPOSITE:
-                self.message(
-                    f"Selected object {composite.name} is not a {SOLLUMZ_UI_NAMES[SollumType.BOUND_COMPOSITE]}, skipping...")
-                continue
-
-            # Create list for storing bound polys
-            selected_composites[composite] = []
-            # Gather GeometryBVH(s)
-            for bvh in get_children_recursive(composite):
-                if bvh.sollum_type == SollumType.BOUND_GEOMETRYBVH:
-                    for bound_poly in bvh.children:
-                        if bound_poly.sollum_type in BOUND_POLYGON_TYPES:
-                            selected_composites[composite].append(
-                                bound_poly)
-                            num_bound_polys_selected += 1
-
-        # Split objects
-        for composite, bound_polys in selected_composites.items():
-            composite_name = composite.name
-            composite.name = ""
-
-            parts_per_col = ceil(
-                num_bound_polys_selected / context.scene.split_collision_count)
-
-            if num_bound_polys_selected < parts_per_col:
-                self.message(
-                    f"Can't divide by a value less than the number of Bound Polygon(s) ({num_bound_polys_selected} selected).")
-                return False
-
-            new_composite = None
-
-            for i, bound_poly in enumerate(bound_polys):
-                if i % parts_per_col == 0:
-                    new_composite = create_empty_object(
-                        SollumType.BOUND_COMPOSITE)
-                    # new_composite = create_bound(
-                    #     SollumType.BOUND_COMPOSITE, do_link=False)
-
-                    bound_poly.users_collection[0].objects.link(
-                        new_composite)
-
-                    new_composite.name = composite_name
-                    new_composite.matrix_world = composite.matrix_world
-
-                if new_composite is None:
-                    continue
-
-                if bound_poly is None:
-                    continue
-
-                bound_polys[i] = None
-
-                # new_bvh = create_bound(
-                #     SollumType.BOUND_GEOMETRYBVH, do_link=False)
-                new_bvh = create_empty_object(SollumType.BOUND_GEOMETRYBVH)
-
-                # Link the new empties to the object's collection (not always the active collection)
-                bound_poly.users_collection[0].objects.link(new_bvh)
-
-                bound_poly_mat = bound_poly.matrix_world.copy()
-
-                new_bvh.parent = new_composite
-
-                new_bvh.matrix_world = bound_poly.parent.matrix_world
-                new_bvh.matrix_world.translation = bound_poly.matrix_world.translation
-
-                bound_poly.parent = new_bvh
-
-                bound_poly.matrix_world = bound_poly_mat
-                bound_poly.location = Vector()
-
-            for child in composite.children:
-                if child.sollum_type == SollumType.BOUND_GEOMETRYBVH:
-                    bpy.data.objects.remove(child)
-
-            bpy.data.objects.remove(composite)
-
-        return True
 
 
 class SOLLUMZ_OT_delete_flag_preset(SOLLUMZ_OT_base, bpy.types.Operator):
@@ -359,7 +283,7 @@ class SOLLUMZ_OT_delete_flag_preset(SOLLUMZ_OT_base, bpy.types.Operator):
     ]
 
     def run(self, context):
-        index = context.scene.flag_preset_index
+        index = context.window_manager.sz_flag_preset_index
         load_flag_presets()
 
         try:
@@ -459,7 +383,7 @@ class SOLLUMZ_OT_load_flag_preset(SOLLUMZ_OT_base, bpy.types.Operator):
     bl_action = f"{bl_label}"
 
     def run(self, context):
-        index = context.scene.flag_preset_index
+        index = context.window_manager.sz_flag_preset_index
         selected = context.selected_objects
         if len(selected) < 1:
             self.message("No objects selected!")
@@ -469,34 +393,16 @@ class SOLLUMZ_OT_load_flag_preset(SOLLUMZ_OT_base, bpy.types.Operator):
 
         for obj in selected:
             try:
-                preset = flag_presets.presets[index]
-
-                if obj.sollum_game_type == SollumzGame.RDR:
-                    preset = flag_presets.presets[1]
-                    flags_class = RDRBoundFlags
-                    type_flags, include_flags = obj.type_flags, obj.include_flags
-                else:
-                    preset = flag_presets.presets[0]
-                    flags_class = BoundFlags
-                    type_flags, include_flags = obj.composite_flags1, obj.composite_flags2
-
-                for flag_name in flags_class.__annotations__.keys():
-                    flag_in_preset1 = flag_name in preset.flags1
-                    flag_in_preset2 = flag_name in preset.flags2
-
-                    type_flags[flag_name] = flag_in_preset1
-                    include_flags[flag_name] = flag_in_preset2
-                    include_flags[flag_name] = flag_in_preset2
-
-                tag_redraw(context)
-                self.message(
-                    f"Applied preset '{preset.name}' to: {obj.name}")
+                if apply_flag_preset(obj, obj.sollum_game_type, index, reload_presets=False):
+                    preset = flag_presets.presets[index]
+                    self.message(f"Applied preset '{preset.name}' to: {obj.name}")
             except IndexError:
                 filepath = get_flag_presets_path()
                 self.error(
                     f"Flag preset does not exist! Ensure the preset file is present in the '{filepath}' directory.")
                 return False
 
+        tag_redraw(context)
         return True
 
 

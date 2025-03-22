@@ -840,6 +840,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_2tex_blend_pxm_spm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -891,6 +892,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_2tex_blend_lod.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -1169,7 +1171,7 @@
  <Item>
   <Name>cable</Name>
   <FileName>
-   <Item bucket="0">cable.sps</Item>
+   <Item bucket="1">cable.sps</Item>
   </FileName>
   <Layout>
    <Item type="GTAV1">
@@ -1181,16 +1183,16 @@
   </Layout>
   <Parameters>
    <Item name="textureSamp" type="Texture" />
-   <Item name="alphaTestValue" type="float" x="0" />
+   <Item name="alphaTestValue" type="float" x="0" hidden="true" />
    <Item name="shader_cableEmissive" type="float" x="0" />
    <Item name="shader_cableAmbient" type="float2" x="0.4" y="0.4" />
-   <Item name="shader_cableDiffuse2" type="float3" x="0" y="0" z="0" />
-   <Item name="shader_cableDiffuse" type="float3" x="0" y="0" z="0" />
+   <Item name="shader_cableDiffuse2" type="float3" subtype="rgb" x="0" y="0" z="0" />
+   <Item name="shader_cableDiffuse" type="float3" subtype="rgb" x="0" y="0" z="0" />
    <Item name="shader_windAmount" type="float" x="1" />
    <Item name="shader_fadeExponent" type="float" x="1" />
    <Item name="shader_radiusScale" type="float" x="1" />
-   <Item name="gCableParams" type="float4" count="5" />
-   <Item name="gViewProj" type="float4x4" />
+   <Item name="gCableParams" type="float4" count="5" hidden="true" />
+   <Item name="gViewProj" type="float4x4" hidden="true" />
   </Parameters>
  </Item>
  <Item>
@@ -1363,6 +1365,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_2tex_blend.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -1584,10 +1587,37 @@
   </Parameters>
  </Item>
  <Item>
+  <Name>terrain_cb_4lyr_lod</Name>
+  <FileName>
+   <Item bucket="0">terrain_cb_4lyr_lod.sps</Item>
+  </FileName>
+  <Flags>IS_TERRAIN</Flags>
+  <Layout>
+   <Item type="GTAV1">
+    <Position />
+    <Normal />
+    <Colour0 />
+    <Colour1 />
+    <TexCoord0 />
+   </Item>
+  </Layout>
+  <Parameters>
+   <Item name="TextureSampler_layer0" type="Texture" uv="0" />
+   <Item name="TextureSampler_layer1" type="Texture" uv="0" />
+   <Item name="TextureSampler_layer2" type="Texture" uv="0" />
+   <Item name="TextureSampler_layer3" type="Texture" uv="0" />
+   <Item name="wetnessMultiplier" type="float" x="0.3" />
+   <Item name="bumpSelfShadowAmount" type="float" x="0.3" />
+   <Item name="specularIntensityMult" type="float" x="0.01" />
+   <Item name="specularFalloffMult" type="float" x="32" />
+  </Parameters>
+ </Item>
+ <Item>
   <Name>terrain_cb_w_4lyr_lod</Name>
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_lod.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -1893,6 +1923,7 @@
    <Item bucket="3">cloth_normal_spec_cutout.sps</Item>
    <Item bucket="1">cloth_normal_spec_alpha.sps</Item>
   </FileName>
+  <Flags>IS_CLOTH</Flags>
   <Layout>
    <Item type="GTAV2">
     <Position />
@@ -2008,6 +2039,7 @@
   <FileName>
    <Item bucket="0">cloth_default.sps</Item>
   </FileName>
+  <Flags>IS_CLOTH</Flags>
   <Layout>
    <Item type="GTAV3">
     <Position />
@@ -2361,6 +2393,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_pxm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -2466,6 +2499,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_pxm_spm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -2596,6 +2630,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_spec_pxm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -2939,6 +2974,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_2tex_blend_pxm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -3030,6 +3066,7 @@
    <Item bucket="3">cloth_spec_cutout.sps</Item>
    <Item bucket="1">cloth_spec_alpha.sps</Item>
   </FileName>
+  <Flags>IS_CLOTH</Flags>
   <Layout>
    <Item type="GTAV2">
     <Position />
@@ -3554,6 +3591,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -4037,6 +4075,7 @@
   <FileName>
    <Item bucket="0">vehicle_cloth.sps</Item>
   </FileName>
+  <Flags>IS_CLOTH</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -4519,7 +4558,7 @@
  <Item>
   <Name>grass</Name>
   <FileName>
-   <Item bucket="0">grass.sps</Item>
+   <Item bucket="3">grass.sps</Item>
   </FileName>
   <Layout>
    <Item type="GTAV1">
@@ -4807,6 +4846,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_spec_int_pxm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -5045,6 +5085,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_spec_int.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -5116,7 +5157,7 @@
  <Item>
   <Name>grass_batch</Name>
   <FileName>
-   <Item bucket="0">grass_batch.sps</Item>
+   <Item bucket="3">grass_batch.sps</Item>
   </FileName>
   <Layout>
    <Item type="GTAV1">
@@ -5458,6 +5499,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_2tex.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -6101,6 +6143,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_cm_tnt.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN IS_TERRAIN_MASK_ONLY</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -6495,6 +6538,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_spec.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -6863,6 +6907,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_cm_pxm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN IS_TERRAIN_MASK_ONLY</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -6986,6 +7031,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_cm_pxm_tnt.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN IS_TERRAIN_MASK_ONLY</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -7103,6 +7149,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_2tex_pxm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -7756,6 +7803,7 @@
   <FileName>
    <Item bucket="0">cloth_normal_spec_tnt.sps</Item>
   </FileName>
+  <Flags>IS_CLOTH</Flags>
   <Layout>
    <Item type="GTAV2">
     <Position />
@@ -8063,7 +8111,7 @@
  <Item>
   <Name>normal_spec_batch</Name>
   <FileName>
-   <Item bucket="0">normal_spec_batch.sps</Item>
+   <Item bucket="3">normal_spec_batch.sps</Item>
   </FileName>
   <Layout>
    <Item type="GTAV1">
@@ -8212,6 +8260,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_w_4lyr_cm.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN IS_TERRAIN_MASK_ONLY</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -8335,6 +8384,7 @@
   <FileName>
    <Item bucket="0">vehicle_cloth2.sps</Item>
   </FileName>
+  <Flags>IS_CLOTH</Flags>
   <Layout>
    <Item type="GTAV2">
     <Position />
@@ -8504,6 +8554,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_4lyr_2tex.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />
@@ -8683,6 +8734,7 @@
   <FileName>
    <Item bucket="0">terrain_cb_4lyr.sps</Item>
   </FileName>
+  <Flags>IS_TERRAIN</Flags>
   <Layout>
    <Item type="GTAV1">
     <Position />

@@ -4,8 +4,8 @@ import bmesh
 from mathutils import Matrix, Vector
 from itertools import chain
 
-from ..tools.meshhelper import calculate_volume, get_combined_bound_box
-
+from ..tools.meshhelper import get_combined_bound_box
+from ..shared.geometry import get_mass_properties_of_box
 from ..sollumz_helper import find_sollumz_parent
 from ..sollumz_properties import BOUND_POLYGON_TYPES, BOUND_TYPES, MaterialType, SollumType, VehicleLightID
 from ..tools.blenderhelper import add_child_of_bone_constraint, create_blender_object, create_empty_object, get_child_of_bone
@@ -13,8 +13,7 @@ from ..ybn.collision_materials import collisionmats
 
 
 class SOLLUMZ_OT_CREATE_FRAGMENT(bpy.types.Operator):
-    """Create a Fragment object. If a Drawable or Bound Composite is selected,
-    they will be parented to the Fragment."""
+    """Create a Fragment object. If a Drawable or Bound Composite is selected, they will be parented to the Fragment"""
     bl_idname = "sollumz.createfragment"
     bl_label = "Create Fragment"
     bl_options = {"REGISTER", "UNDO"}
@@ -106,7 +105,7 @@ class SOLLUMZ_OT_SET_MASS(bpy.types.Operator):
 
 
 class SOLLUMZ_OT_COPY_FRAG_BONE_PHYSICS(bpy.types.Operator):
-    """Copy the physics properties of the active bone to all selected bones. Can only be used in Pose Mode."""
+    """Copy the physics properties of the active bone to all selected bones. Can only be used in Pose Mode"""
     bl_idname = "sollumz.copy_frag_bone_physics"
     bl_label = "Copy Bone Physics"
     bl_options = {"UNDO"}
@@ -191,20 +190,22 @@ class SOLLUMZ_OT_SET_LIGHT_ID(bpy.types.Operator):
 
         for obj in selected_mesh_objs:
             bm = bmesh.from_edit_mesh(obj.data)
-
-            if not bm.loops.layers.color:
-                self.report(
-                    {"INFO"}, f"'{obj.name}' has no 'Face Corner > Byte Color' color attribute layers! Skipping...")
-                continue
-
-            color_layer = bm.loops.layers.color[0]
-
-            for face in bm.faces:
-                if not face.select:
+            try:
+                if not bm.loops.layers.color:
+                    self.report(
+                        {"INFO"}, f"'{obj.name}' has no 'Face Corner > Byte Color' color attribute layers! Skipping...")
                     continue
 
-                for loop in face.loops:
-                    loop[color_layer][3] = alpha
+                color_layer = bm.loops.layers.color[0]
+
+                for face in bm.faces:
+                    if not face.select:
+                        continue
+
+                    for loop in face.loops:
+                        loop[color_layer][3] = alpha
+            finally:
+                bm.free()
 
         return {"FINISHED"}
 
@@ -240,13 +241,15 @@ class SOLLUMZ_OT_SELECT_LIGHT_ID(bpy.types.Operator):
         for obj in selected_mesh_objs:
             mesh = obj.data
             bm = bmesh.from_edit_mesh(mesh)
+            try:
+                if not bm.loops.layers.color:
+                    continue
 
-            if not bm.loops.layers.color:
-                continue
+                color_layer = bm.loops.layers.color[0]
 
-            color_layer = bm.loops.layers.color[0]
-
-            face_inds = self.get_light_id_faces(bm, color_layer, light_id)
+                face_inds = self.get_light_id_faces(bm, color_layer, light_id)
+            finally:
+                bm.free()
 
             mode = obj.mode
             if obj.mode != "OBJECT":
@@ -412,7 +415,8 @@ class SOLLUMZ_OT_CALCULATE_MASS(bpy.types.Operator):
 
     def calculate_mass(self, obj: bpy.types.Object, mat: bpy.types.Material) -> float:
         bbmin, bbmax = get_combined_bound_box(obj, use_world=True)
-        volume = calculate_volume(bbmin, bbmax)
+        # TODO: here we could calculate the volume based on shape like we do on ybnexport for more accurate results
+        volume = get_mass_properties_of_box(bbmin, bbmax).volume
         density = collisionmats[mat.collision_properties.collision_index].density
 
         return volume * density

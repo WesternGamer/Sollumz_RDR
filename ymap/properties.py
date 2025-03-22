@@ -21,6 +21,7 @@ def update_uint_prop(self, context, var_name):
         setattr(self, var_name, str(max_val))
 
 
+# TODO: why is FlagPropertyGroup duplicated here?
 class FlagPropertyGroup:
     """Credits: Sollumz"""
 
@@ -30,7 +31,7 @@ class FlagPropertyGroup:
             self.flags_toggle[flag_name] = flags[index]
 
     def update_flag(self, context):
-        flags = flag_prop_to_list(self.__class__, self)
+        flags = flag_prop_to_list(self.__class__.__annotations__, self)
         obj = context.active_object
         if obj:
             obj.ymap_properties.flags = flag_list_to_int(flags)
@@ -45,7 +46,7 @@ class ContentFlagPropertyGroup:
             self.content_flags_toggle[flag_name] = flags[index]
 
     def update_flag(self, context):
-        flags = flag_prop_to_list(self.__class__, self)
+        flags = flag_prop_to_list(self.__class__.__annotations__, self)
         obj = context.active_object
         if obj:
             obj.ymap_properties.content_flags = flag_list_to_int(flags)
@@ -102,10 +103,10 @@ class YmapProperties(bpy.types.PropertyGroup):
     content_flags: IntProperty(name="Content Flags", default=0, min=0, max=(
         2**11)-1, update=ContentFlagPropertyGroup.update_flags_total)
 
-    streaming_extents_min: FloatVectorProperty()
-    streaming_extents_max: FloatVectorProperty()
-    entities_extents_min: FloatVectorProperty()
-    entities_extents_max: FloatVectorProperty()
+    streaming_extents_min: FloatVectorProperty(name="Streaming Extents Min", default=(0, 0, 0), size=3, subtype='XYZ')
+    streaming_extents_max: FloatVectorProperty(name="Streaming Extents Max", default=(0, 0, 0), size=3, subtype='XYZ')
+    entities_extents_min: FloatVectorProperty(name="Entities Extents Min", default=(0, 0, 0), size=3, subtype='XYZ')
+    entities_extents_max: FloatVectorProperty(name="Entities Extents Max", default=(0, 0, 0), size=3, subtype='XYZ')
 
     flags_toggle: PointerProperty(type=MapFlags)
     content_flags_toggle: PointerProperty(type=ContentFlags)
@@ -116,6 +117,18 @@ class YmapProperties(bpy.types.PropertyGroup):
 
 class YmapModelOccluderProperties(bpy.types.PropertyGroup):
     model_occl_flags: IntProperty(name="Flags", default=0)
+
+    def _set_is_water_only(self, enable: bool):
+        if enable:
+            self.model_occl_flags |= 1
+        else:
+            self.model_occl_flags &= ~1
+
+    is_water_only: BoolProperty(
+        name="Is Water Only",
+        get=lambda s: (s.model_occl_flags & 1) != 0,
+        set=_set_is_water_only
+    )
 
 
 class YmapCarGeneratorProperties(bpy.types.PropertyGroup):

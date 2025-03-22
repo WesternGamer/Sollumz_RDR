@@ -706,13 +706,46 @@ class VertexBuffer(ElementTree):
         return element
 
     def _load_data_from_str(self, _str: str):
-        struct_dtype = np.dtype([self.VERT_ATTR_DTYPES[attr_name]
-                                 for attr_name in self.layout])
+        layout = self.get_element("layout")
+        struct_dtype = np.dtype([self.VERT_ATTR_DTYPES[attr_name] for attr_name in layout.value])
+        if layout.type == "GTAV2":
+            # FVF with value GTAV2 (used for cloth) has Normal with format RGBA8 (though A is unused), which CW now
+            # exports as 4 floats. Other code assumes that Normal always has 3 floats.
+            # This is the only case (given vanilla assets at least) where a vertex element can have a different number
+            # of components depending on FVF so just hack it in here. Read the 4 floats and drop the last float.
+            normal_fmt = ("Normal", np.float32, 4)
+            raw_struct_dtype = np.dtype([normal_fmt if attr_name == "Normal" else self.VERT_ATTR_DTYPES[attr_name]
+                                         for attr_name in layout.value])
 
-        self.data = np.loadtxt(io.StringIO(_str), dtype=struct_dtype)
+            raw_data = np.loadtxt(io.StringIO(_str), dtype=raw_struct_dtype)
+
+            data = np.empty_like(raw_data, dtype=struct_dtype)
+            for comp in layout.value:
+                if comp == "Normal":
+                    data["Normal"] = raw_data["Normal"][:, :3]
+                else:
+                    data[comp] = raw_data[comp]
+
+            self.data = data
+        else:
+            self.data = np.loadtxt(io.StringIO(_str), dtype=struct_dtype)
 
     def _data_to_str(self):
+        layout = self.get_element("layout")
         vert_arr = self.data
+
+        if layout.type == "GTAV2":
+            # Add back the 4th float of Normal element required by FVF GTAV2
+            new_struct_dtype = np.dtype([(name, dtype if name != "Normal" else (np.float32, 4))
+                                         for name, (dtype, _) in vert_arr.dtype.fields.items()])
+            new_vert_arr = np.empty_like(vert_arr, dtype=new_struct_dtype)
+            for comp in vert_arr.dtype.fields.keys():
+                if comp == "Normal":
+                    new_vert_arr["Normal"] = np.c_[vert_arr["Normal"], np.zeros(len(vert_arr))]
+                else:
+                    new_vert_arr[comp] = vert_arr[comp]
+
+            vert_arr = new_vert_arr
 
         FLOAT_FMT = "%.7f"
         INT_FMT = "%.0u"
@@ -728,8 +761,7 @@ class VertexBuffer(ElementTree):
             formats.append(" ".join([attr_fmt] * column.shape[1]))
 
         fmt = ATTR_SEP.join(formats)
-        vert_arr_2d = np.column_stack(
-            [vert_arr[name] for name in vert_arr.dtype.names])
+        vert_arr_2d = np.column_stack([vert_arr[name] for name in vert_arr.dtype.names])
 
         return np_arr_to_str(vert_arr_2d, fmt)
 
@@ -822,7 +854,6 @@ class DrawableModel(ElementTree):
         self.flags = ValueProperty("Flags", 0)
         self.has_skin = ValueProperty("HasSkin", 0)
         self.bone_index = ValueProperty("BoneIndex", 0)
-        
         if current_game == SollumzGame.GTA:
             self.render_mask = ValueProperty("RenderMask", 0)
             self.matrix_count = ValueProperty("Unknown1", 0)
@@ -832,7 +863,7 @@ class DrawableModel(ElementTree):
             self.bounding_box_min = VectorProperty("BoundingBoxMin")
             self.bounding_box_max = VectorProperty("BoundingBoxMax")
 
-        self.geometries = GeometriesList()    
+        self.geometries = GeometriesList()
 
 
 class DrawableModelList(ListProperty):
@@ -854,7 +885,7 @@ class LodList(ElementTree):
         self.models = LodModelsList()
 
 class Drawable(ElementTree, AbstractClass):
-    tag_name = "Drawable"
+    tag_name = None
 
     @property
     def is_empty(self) -> bool:
@@ -869,12 +900,13 @@ class Drawable(ElementTree, AbstractClass):
         return self.drawable_models_high + self.drawable_models_med + self.drawable_models_low + self.drawable_models_vlow
 
     def __init__(self, tag_name: str = "Drawable"):
-        self.tag_name = tag_name
         super().__init__()
-        # Only in fragment drawables
+        self.tag_name = tag_name
         self.game = current_game
-        self.matrix = MatrixProperty("Matrix")
-        self.matrices = DrawableMatrices("Matrices")
+
+        # Only in fragment drawables
+        self.frag_bound_matrix = MatrixProperty("Matrix")
+        self.frag_extra_bound_matrices = DrawableMatrices("Matrices")
 
         self.name = TextProperty("Name", "")
         if current_game == SollumzGame.RDR:
@@ -912,73 +944,73 @@ class Drawable(ElementTree, AbstractClass):
             self.drawable_models_med = LodList("LodMed")
             self.drawable_models_low = LodList("LodLow")
             self.drawable_models_vlow = LodList("LodVeryLow")
-        
-        self.bounds = []
-        
+
+        self.bounds = None
+
         # For merging hi Drawables after import
         self.hi_models: list[DrawableModel] = []
 
     @classmethod
     def from_xml(cls, element: ET.Element):
         new = super().from_xml(element)
-        bounds = element.findall("Bounds")
         if current_game == SollumzGame.GTA:
-            for child in bounds:
-                bound_type = child.get("type")
+            bounds_elem = element.find("Bounds")
+            if bounds_elem is not None:
+                bound_type = bounds_elem.get("type")
                 bound = None
                 if bound_type == "Composite":
-                    bound = BoundComposite.from_xml(child)
+                    bound = BoundComposite.from_xml(bounds_elem)
                 elif bound_type == "Box":
-                    bound = BoundBox.from_xml(child)
+                    bound = BoundBox.from_xml(bounds_elem)
                 elif bound_type == "Sphere":
-                    bound = BoundSphere.from_xml(child)
+                    bound = BoundSphere.from_xml(bounds_elem)
                 elif bound_type == "Capsule":
-                    bound = BoundCapsule.from_xml(child)
+                    bound = BoundCapsule.from_xml(bounds_elem)
                 elif bound_type == "Cylinder":
-                    bound = BoundCylinder.from_xml(child)
+                    bound = BoundCylinder.from_xml(bounds_elem)
                 elif bound_type == "Disc":
-                    bound = BoundDisc.from_xml(child)
+                    bound = BoundDisc.from_xml(bounds_elem)
                 elif bound_type == "Cloth":
-                    bound = BoundCloth.from_xml(child)
+                    bound = BoundCloth.from_xml(bounds_elem)
                 elif bound_type == "Geometry":
-                    bound = BoundGeometry.from_xml(child)
+                    bound = BoundGeometry.from_xml(bounds_elem)
                 elif bound_type == "GeometryBVH":
-                    bound = BoundGeometryBVH.from_xml(child)
-                    
+                    bound = BoundGeometryBVH.from_xml(bounds_elem)
+
                 if bound:
                     bound.tag_name = "Bounds"
-                    new.bounds.append(bound)
+                    new.bounds = bound
 
         elif current_game == SollumzGame.RDR:
-            for child in bounds:
-                bound_type = child.get("type")
+            bounds_elem = element.find("Bounds")
+            if bounds_elem is not None:
+                bound_type = bounds_elem.get("type")
                 bound = None
                 if bound_type == "Composite":
-                    bound = RDRBoundFile.from_xml(child)
+                    bound = RDRBoundFile.from_xml(bounds_elem)
                 elif bound_type == "Box":
-                    bound = RDRBoundBox.from_xml(child)
+                    bound = RDRBoundBox.from_xml(bounds_elem)
                 elif bound_type == "Sphere":
-                    bound = RDRBoundSphere.from_xml(child)
+                    bound = RDRBoundSphere.from_xml(bounds_elem)
                 elif bound_type == "Capsule":
-                    bound = RDRBoundCapsule.from_xml(child)
+                    bound = RDRBoundCapsule.from_xml(bounds_elem)
                 elif bound_type == "Cylinder":
-                    bound = RDRBoundCylinder.from_xml(child)
+                    bound = RDRBoundCylinder.from_xml(bounds_elem)
                 elif bound_type == "Disc":
-                    bound = RDRBoundDisc.from_xml(child)
+                    bound = RDRBoundDisc.from_xml(bounds_elem)
                 else:
                     raise Exception("Unable to create RDR bound since its not composite and hence unimplemented")
+
                 if bound:
                     bound.tag_name = "Bounds"
-                    new.bounds.append(bound)
-       
+                    new.bounds = bound
+
         return new
 
     def to_xml(self):
-        element = super().to_xml()
-        for bound in self.bounds:
-            bound.tag_name = "Bounds"
-            element.append(bound.to_xml())
-        return element
+        if self.bounds:
+            self.bounds.tag_name = "Bounds"
+        return super().to_xml()
 
 
 class RDR2DrawableDictionary(ElementTree, AbstractClass):

@@ -67,8 +67,8 @@ def update_lods(obj: Object):
 
 
 def update_mlo_tcmods_percentage(ytyp: CMapTypesProperties):
-    for arch in ytyp.archetypes:
-        for tcmod in arch.timecycle_modifiers:
+    for arch in ytyp.get("archetypes", []):
+        for tcmod in arch.get("timecycle_modifiers", []):
             old_percentage = tcmod.get("percentage", None)
             if old_percentage is None:
                 continue
@@ -77,6 +77,60 @@ def update_mlo_tcmods_percentage(ytyp: CMapTypesProperties):
             new_percentage = float(old_percentage)
             new_percentage = max(0.0, min(100.0, new_percentage))
             tcmod["percentage"] = new_percentage
+
+
+def add_new_default_light_preset():
+    """Adds the new "Default" light preset. Not really part of the .blend data, but this is probably the best place to
+    check for this.
+    """
+    import os
+    from ..ydr.properties import get_light_presets_path, get_default_light_presets_path, load_light_presets
+    from ..cwxml.light_preset import LightPresetsFile
+
+    user_path = get_light_presets_path()
+    if not os.path.exists(user_path):
+        # No custom light presets, don't need to do anything, the default light presets file will be loaded
+        return
+
+    default_path = get_default_light_presets_path()
+    if not os.path.exists(default_path):
+        # The default light presets file doesn't exist, worrying but can't do anything about it
+        return
+
+    user_presets = LightPresetsFile.from_xml_file(user_path)
+    if any(p.name == "Default" for p in user_presets.presets):
+        # Already have the "Default" preset
+        return
+
+    default_presets = LightPresetsFile.from_xml_file(default_path)
+    preset = next((p for p in default_presets.presets if p.name == "Default"), None)
+    if preset is None:
+        # "Default" preset missing
+        return
+
+    user_presets.presets.insert(0, preset)
+    user_presets.write_xml(user_path)
+
+    # Refresh presets UI
+    load_light_presets()
+
+
+def convert_constraint_child_of_to_copy_transform(obj: Object):
+    from ..tools.blenderhelper import add_child_of_bone_constraint
+
+    child_of_constraints = [
+        con for con in obj.constraints
+        if (con.type == "CHILD_OF" and
+            con.target_space == "POSE" and
+            con.owner_space == "LOCAL" and
+            con.target is not None and
+            con.target.type == "ARMATURE")
+    ]
+    for con in child_of_constraints:
+        armature_obj = con.target
+        bone_name = con.subtarget
+        obj.constraints.remove(con)
+        add_child_of_bone_constraint(obj, armature_obj, bone_name)
 
 
 def do_versions(data_version: int, data: BlendData):
@@ -88,3 +142,10 @@ def do_versions(data_version: int, data: BlendData):
         for scene in data.scenes:
             for ytyp in scene.ytyps:
                 update_mlo_tcmods_percentage(ytyp)
+
+    if data_version < 4:
+        add_new_default_light_preset()
+
+    if data_version < 5:
+        for obj in data.objects:
+            convert_constraint_child_of_to_copy_transform(obj)

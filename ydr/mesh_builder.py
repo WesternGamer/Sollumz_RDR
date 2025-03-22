@@ -3,7 +3,11 @@ import bpy
 import numpy as np
 from numpy.typing import NDArray
 from traceback import format_exc
-from ..tools.meshhelper import create_uv_attr, create_color_attr, flip_uvs
+from ..tools.meshhelper import (
+    create_uv_attr,
+    create_color_attr,
+    flip_uvs,
+)
 from mathutils import Vector
 from .. import logger
 
@@ -19,6 +23,14 @@ class MeshBuilder:
             raise ValueError(
                 "Indices array should be a 1D array in triangle order and it's size should be divisble by 3!")
 
+        # Triangles using the same vertex 2+ times are not valid topology for Blender and can potentially crash/hang
+        # Blender before we have a chance to call `Mesh.validate()`. Some vanilla models and, often, modded models have
+        # some of these degenerate triangles, so remove them.
+        faces = ind_arr.reshape((int(ind_arr.size / 3), 3))
+        invalid_faces_mask = (faces[:,0] == faces[:,1]) | (faces[:,0] == faces[:,2]) | (faces[:,1] == faces[:,2])
+        ind_arr = faces[~invalid_faces_mask].reshape((-1,))
+        mat_inds = mat_inds[~invalid_faces_mask]
+
         self.vertex_arr = vertex_arr
         self.ind_arr = ind_arr
         self.mat_inds = mat_inds
@@ -27,10 +39,8 @@ class MeshBuilder:
         self.materials = drawable_mats
 
         self._has_normals = "Normal" in vertex_arr.dtype.names
-        self._has_uvs = any(
-            "TexCoord" in name for name in vertex_arr.dtype.names)
-        self._has_colors = any(
-            "Colour" in name for name in vertex_arr.dtype.names)
+        self._has_uvs = any("TexCoord" in name for name in vertex_arr.dtype.names)
+        self._has_colors = any("Colour" in name for name in vertex_arr.dtype.names)
 
     def build(self, game: str):
         mesh = bpy.data.meshes.new(self.name)
@@ -77,8 +87,7 @@ class MeshBuilder:
     def set_mesh_normals(self, mesh: bpy.types.Mesh):
         mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
 
-        normals_normalized = [Vector(n[:3]).normalized()
-                              for n in self.vertex_arr["Normal"]]
+        normals_normalized = [Vector(n[:3]).normalized() for n in self.vertex_arr["Normal"]]
         mesh.normals_split_custom_set_from_vertices(normals_normalized)
 
         if bpy.app.version < (4, 1, 0):
@@ -86,24 +95,23 @@ class MeshBuilder:
             mesh.use_auto_smooth = True
 
     def set_mesh_uvs(self, mesh: bpy.types.Mesh):
-        uv_attrs = [
-            name for name in self.vertex_arr.dtype.names if "TexCoord" in name]
+        uv_attrs = [name for name in self.vertex_arr.dtype.names if name.startswith("TexCoord")]
 
         for attr_name in uv_attrs:
+            uvmap_idx = int(attr_name[8:])
             uvs = self.vertex_arr[attr_name]
-
             flip_uvs(uvs)
 
-            create_uv_attr(mesh, uvs[self.ind_arr])
+            create_uv_attr(mesh, uvmap_idx, initial_values=uvs[self.ind_arr])
 
     def set_mesh_vertex_colors(self, mesh: bpy.types.Mesh):
-        color_attrs = [
-            name for name in self.vertex_arr.dtype.names if "Colour" in name]
+        color_attrs = [name for name in self.vertex_arr.dtype.names if name.startswith("Colour")]
 
         for attr_name in color_attrs:
+            color_idx = int(attr_name[6:])
             colors = self.vertex_arr[attr_name] / 255
 
-            create_color_attr(mesh, colors[self.ind_arr])
+            create_color_attr(mesh, color_idx, initial_values=colors[self.ind_arr])
 
     def create_vertex_groups(self, obj: bpy.types.Object, bones: list[bpy.types.Bone], current_game: SollumzGame = SollumzGame.GTA, bone_mapping = None):
         vertex_groups: dict[int, bpy.types.VertexGroup] = {}

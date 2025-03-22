@@ -36,6 +36,7 @@ def get_model_data(drawable_xml: Drawable) -> list[ModelData]:
             mapping = {lod_level: model_xml.bone_mapping for lod_level, model_xml in model_lods.items()}
         else:
             mapping = None
+
         model_data = ModelData(
             mesh_data_lods={
                 lod_level: mesh_data_from_xml(model_xml) for lod_level, model_xml in model_lods.items()

@@ -12,7 +12,7 @@ from bpy.app.handlers import persistent
 SOLLUMZ_INTERNAL_VERSION_MISSING = -1
 """Represents a .blend file not yet saved or saved before versioning system."""
 
-SOLLUMZ_INTERNAL_VERSION = 3
+SOLLUMZ_INTERNAL_VERSION = 8
 """Current internal version for Sollumz data stored in .blend files. Independent
 of release versions.
 
@@ -26,6 +26,12 @@ Version History:
  == v2.4.0 ==
   - 2: LOD system fixes.
   - 3: TimecycleModifierProperties.percentage IntProperty -> FloatProperty
+  - 4: added "Default" light preset.
+  - 5: use COPY_TRANSFORM constraint for bone parent instead of CHILD_OF (broke in Blender 4.2)
+ == v2.5.0 ==
+  - 6: removed "sollumz_paint_layer" property from Material. Uses 'matDiffuseColor' directly.
+ == v2.6.0 ==
+  - 7: add UUIDs to archetypes and MLO property groups (rooms, portals, entities and entity sets).
   - <next>: <describe changes>
 """
 
@@ -67,9 +73,11 @@ def do_versions(data: bpy.types.BlendData):
 
     log(f"Upgrading Sollumz data from version {data_version} to version {SOLLUMZ_INTERNAL_VERSION}")
 
-    from . import versioning_230, versioning_240
+    from . import versioning_230, versioning_240, versioning_250, versioning_260
     versioning_230.do_versions(data_version, data)
     versioning_240.do_versions(data_version, data)
+    versioning_250.do_versions(data_version, data)
+    versioning_260.do_versions(data_version, data)
 
 
 def register():

@@ -211,6 +211,7 @@ def convert_obj_to_drawable(obj: bpy.types.Object, sollum_game_type: SollumzGame
     drawable_obj.rotation_euler = obj.rotation_euler
     drawable_obj.rotation_quaternion = obj.rotation_quaternion
     drawable_obj.rotation_axis_angle = obj.rotation_axis_angle
+
     obj_name = obj.name
 
     convert_obj_to_model(obj, sollum_game_type)

@@ -1,17 +1,17 @@
 import bpy
 import re
 import math
-
+import numpy as np
 from mathutils import Vector
 from struct import pack
 from ..cwxml.ymap import *
 from binascii import hexlify
 from ..tools.blenderhelper import remove_number_suffix
-from ..tools.meshhelper import get_bound_center_from_bounds, get_extents, get_dimensions
+from ..tools.meshhelper import get_bound_center_from_bounds, get_extents
 from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumType
-from ..tools.utils import get_min_vector, get_max_vector
 from ..sollumz_preferences import get_export_settings
 from .. import logger
+from ..tools.ymaphelper import generate_ymap_extents
 
 
 def box_from_obj(obj):
@@ -47,23 +47,19 @@ def triangulate_obj(obj):
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
-def get_verts_from_obj(obj):
+def occlusion_model_obj_get_data_buffer(obj) -> bytes:
     """
-    For each vertex get its coordinates in global space (this way we don't need to apply transfroms)
-    then get their bytes hex representation and append. After that for each face get its indices,
-    get their bytes hex representation and append.
+    For each vertex get its coordinates in global space (this way we don't need to apply transfroms) as 32-bit floats
+    and for each face get its indices as 8-bit integers. Then convert them to bytes and append them together.
 
-    :return verts: String if vertex coordinates and face indices in hex representation
-    :rtype str:
+    :return verts: Bytes buffer containing the vertex coordinates and face indices
+    :rtype bytes:
     """
-    verts = ''
-    for v in obj.data.vertices:
-        for c in obj.matrix_world @ v.co:
-            verts += str(hexlify(pack('f', c)))[2:-1].upper()
-    for p in obj.data.polygons:
-        for i in p.vertices:
-            verts += str(hexlify(pack('B', i)))[2:-1].upper()
-    return verts
+    # TODO: should validate that the mesh is within <256 verts
+    mesh = obj.data
+    verts = np.array([obj.matrix_world @ v.co for v in mesh.vertices], dtype=np.float32)
+    indices = np.array([i for p in mesh.polygons for i in p.vertices], dtype=np.uint8)
+    return verts.tobytes() + indices.tobytes()
 
 
 def model_from_obj(obj):
@@ -71,12 +67,14 @@ def model_from_obj(obj):
 
     model = OccludeModel()
     model.bmin, model.bmax = get_extents(obj)
-    model.verts = get_verts_from_obj(obj)
+    model.verts = occlusion_model_obj_get_data_buffer(obj)
     model.num_verts_in_bytes = len(obj.data.vertices) * 12
     face_count = len(obj.data.polygons)
-    model.num_tris = face_count + 32768
-    model.data_size = model.num_verts_in_bytes + (face_count * 3)
-    model.flags = obj.ymap_properties.flags
+    model.num_tris = face_count | 0x8000  # add float vertex format marker
+    model.data_size = len(model.verts)
+    model.flags = obj.ymap_model_occl_properties.model_occl_flags
+
+    assert model.data_size == (model.num_verts_in_bytes + face_count * 3)
 
     return model
 
@@ -109,22 +107,6 @@ def entity_from_obj(obj):
 
     return entity
 
-# TODO: This needs more work for non occluder object (entities )
-
-
-def calculate_extents(ymap, obj):
-    bbmin, bbmax = get_extents(obj)
-
-    ymap.entities_extents_min = get_min_vector(
-        ymap.entities_extents_min, bbmin)
-    ymap.entities_extents_max = get_max_vector(
-        ymap.entities_extents_max, bbmax)
-    ymap.streaming_extents_min = get_min_vector(
-        ymap.streaming_extents_min, bbmin)
-    ymap.streaming_extents_max = get_max_vector(
-        ymap.streaming_extents_max, bbmax)
-
-
 def cargen_from_obj(obj):
     cargen = CarGenerator()
     cargen.position = obj.location
@@ -153,11 +135,6 @@ def calculate_cargen_orient(obj):
 
 def ymap_from_object(obj):
     ymap = CMapData()
-    max_int = (2**31) - 1
-    ymap.entities_extents_min = Vector((max_int, max_int, max_int))
-    ymap.entities_extents_max = Vector((0, 0, 0))
-    ymap.streaming_extents_min = Vector((max_int, max_int, max_int))
-    ymap.streaming_extents_max = Vector((0, 0, 0))
 
     export_settings = get_export_settings()
 
@@ -165,11 +142,7 @@ def ymap_from_object(obj):
         # Entities
         if export_settings.ymap_exclude_entities == False and child.sollum_type == SollumType.YMAP_ENTITY_GROUP:
             for entity_obj in child.children:
-                if entity_obj.sollum_type == SollumType.DRAWABLE:
-                    ymap.entities.append(entity_from_obj(entity_obj))
-                else:
-                    logger.warning(
-                        f"Object {entity_obj.name} will be skipped because it is not a {SOLLUMZ_UI_NAMES[SollumType.DRAWABLE]} type.")
+                ymap.entities.append(entity_from_obj(entity_obj))
 
         # Box occluders
         if export_settings.ymap_box_occluders == False and child.sollum_type == SollumType.YMAP_BOX_OCCLUDER_GROUP:
@@ -184,7 +157,6 @@ def ymap_from_object(obj):
 
                 if box_obj.sollum_type == SollumType.YMAP_BOX_OCCLUDER:
                     ymap.box_occluders.append(box_from_obj(box_obj))
-                    calculate_extents(ymap, box_obj)
                 else:
                     logger.warning(
                         f"Object {box_obj.name} will be skipped because it is not a {SOLLUMZ_UI_NAMES[SollumType.YMAP_BOX_OCCLUDER]} type.")
@@ -202,7 +174,6 @@ def ymap_from_object(obj):
 
                     ymap.occlude_models.append(
                         model_from_obj(model_obj))
-                    calculate_extents(ymap, model_obj)
                 else:
                     logger.warning(
                         f"Object {model_obj.name} will be skipped because it is not a {SOLLUMZ_UI_NAMES[SollumType.YMAP_MODEL_OCCLUDER]} type.")
@@ -234,7 +205,11 @@ def ymap_from_object(obj):
     ymap.flags = obj.ymap_properties.flags
     ymap.content_flags = obj.ymap_properties.content_flags
 
-    # TODO: Calc extents
+    generate_ymap_extents(obj)
+    ymap.entities_extents_min = obj.ymap_properties.entities_extents_min
+    ymap.entities_extents_max = obj.ymap_properties.entities_extents_max
+    ymap.streaming_extents_min = obj.ymap_properties.streaming_extents_min
+    ymap.streaming_extents_max = obj.ymap_properties.streaming_extents_max
 
     ymap.block.version = obj.ymap_properties.block.version
     ymap.block.versiflagson = obj.ymap_properties.block.flags

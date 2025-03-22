@@ -3,7 +3,21 @@ import bmesh
 from enum import IntEnum
 
 from ..tools.blenderhelper import remove_number_suffix
-from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumType, VehicleLightID, VehiclePaintLayer, items_from_enums
+from ..sollumz_properties import (
+    SOLLUMZ_UI_NAMES,
+    SollumType,
+    VehicleLightID,
+    MIN_VEHICLE_LIGHT_ID,
+    MAX_VEHICLE_LIGHT_ID,
+    items_from_enums,
+)
+from ..ydr.shader_materials import (
+    VEHICLE_PREVIEW_NODE_DIRT_COLOR,
+    VEHICLE_PREVIEW_NODE_DIRT_LEVEL,
+    VEHICLE_PREVIEW_NODE_DIRT_WETNESS,
+    VEHICLE_PREVIEW_NODE_BODY_COLOR,
+    VEHICLE_PREVIEW_NODE_LIGHT_EMISSIVE_TOGGLE,
+)
 
 
 class FragArchetypeProperties(bpy.types.PropertyGroup):
@@ -11,16 +25,11 @@ class FragArchetypeProperties(bpy.types.PropertyGroup):
     max_ang_speed: bpy.props.FloatProperty(name="Max Angular Speed", default=6.2831855)
     gravity_factor: bpy.props.FloatProperty(name="Gravity Factor", default=1)
     buoyancy_factor: bpy.props.FloatProperty(name="Buoyancy Factor", default=1)
-    inertia_tensor: bpy.props.FloatVectorProperty(name="Inertia Tensor")
 
 
 class LODProperties(bpy.types.PropertyGroup):
-    smallest_ang_inertia: bpy.props.FloatProperty(name="Smallest Angular Inertia")
-    largest_ang_inertia: bpy.props.FloatProperty(name="Largest Angular Inertia")
     min_move_force: bpy.props.FloatProperty(name="Min Move Force")
-    position_offset: bpy.props.FloatVectorProperty(name="Position Offset")
-    original_root_cg_offset: bpy.props.FloatVectorProperty(name="Original Root CG Offset")
-    unbroken_cg_offset: bpy.props.FloatVectorProperty(name="Unbroken CG Offset")
+    unbroken_cg_offset: bpy.props.FloatVectorProperty(name="Unbroken CG Offset", subtype="XYZ")
     damping_linear_c: bpy.props.FloatVectorProperty(name="Damping Linear C", default=(0.02, 0.02, 0.02))
     damping_linear_v: bpy.props.FloatVectorProperty(name="Damping Linear V", default=(0.02, 0.02, 0.02))
     damping_linear_v2: bpy.props.FloatVectorProperty(name="Damping Linear V2", default=(0.01, 0.01, 0.01))
@@ -99,6 +108,215 @@ class VehicleWindowProperties(bpy.types.PropertyGroup):
     cracks_texture_tiling: bpy.props.FloatProperty(name="Cracks Texture Tiling", default=1.5)
 
 
+class VehiclePaintLayer(IntEnum):
+    CUSTOM = 0
+    PRIMARY = 1
+    SECONDARY = 2
+    PEARLESCENT = 3
+    WHEEL = 4
+    DEFAULT = 5
+    INTERIOR_TRIM = 6
+    INTERIOR_DASH = 7
+
+    @property
+    def ui_label(self) -> str:
+        match self:
+            case VehiclePaintLayer.CUSTOM:
+                return "Custom - Not Paintable"
+            case VehiclePaintLayer.PRIMARY:
+                return "Primary"
+            case VehiclePaintLayer.SECONDARY:
+                return "Secondary"
+            case VehiclePaintLayer.PEARLESCENT:
+                return "Pearlescent"
+            case VehiclePaintLayer.WHEEL:
+                return "Wheel"
+            case VehiclePaintLayer.DEFAULT:
+                return "Default - Not Paintable"
+            case VehiclePaintLayer.INTERIOR_TRIM:
+                return "Interior Trim"
+            case VehiclePaintLayer.INTERIOR_DASH:
+                return "Dashboard"
+            case _:
+                assert False, f"Unknown paint layer {self}"
+
+
+VehiclePaintLayerEnumItems = tuple((enum.name, enum.ui_label, desc, enum.value) for enum, desc in (
+    (VehiclePaintLayer.CUSTOM,
+        "Custom - cannot be painted at mod shops. Use 'matDiffuseColor' parameter as paint color"),
+    (VehiclePaintLayer.DEFAULT,
+        "Default - cannot be painted at mod shops. Use white as paint color, or grey when vehicle is scorched"),
+    (VehiclePaintLayer.PRIMARY,
+        "Use Primary paint color on this material"),
+    (VehiclePaintLayer.SECONDARY,
+        "Use Secondary paint color on this material"),
+    (VehiclePaintLayer.PEARLESCENT,
+        "Use Pearlescent paint color on this material. Note, this does not apply the pearlescent effect, but simply "
+        "use the color chosen for pearlescent to paint this material as well"),
+    (VehiclePaintLayer.WHEEL,
+        "Use Wheel paint color on this material"),
+    (VehiclePaintLayer.INTERIOR_TRIM,
+        "Use Interior Trim paint color on this material"),
+    (VehiclePaintLayer.INTERIOR_DASH,
+        "Use Interior Dashboard paint color on this material"),
+))
+
+
+class VehicleRenderPreview(bpy.types.PropertyGroup):
+    DEFAULT_DIRT_COLOR = (70/255, 60/255, 50/255)
+    DEFAULT_BODY_COLOR = (1.0, 1.0, 1.0)
+
+    def _on_each_node_tree(self, callback, callback_context):
+        obj = self.id_data
+        if not obj:
+            return
+
+        materials_visited = set()
+        for child_obj in obj.children_recursive:
+            if child_obj.type != "MESH":
+                continue
+
+            mesh = child_obj.data
+            for material in mesh.materials:
+                if material is None or material in materials_visited:
+                    continue
+
+                materials_visited.add(material)
+
+                node_tree = material.node_tree
+                if node_tree is None:
+                    continue
+
+                callback(node_tree, callback_context)
+
+    @staticmethod
+    def _dirt_level_update_callback():
+        def _apply(node_tree, value):
+            node = node_tree.nodes.get(VEHICLE_PREVIEW_NODE_DIRT_LEVEL, None)
+            if node is None:
+                return
+
+            node.outputs[0].default_value = value
+
+        def _update(self, context):
+            value = self.dirt_level
+            self._on_each_node_tree(_apply, value)
+
+        return _update
+
+    @staticmethod
+    def _dirt_wetness_update_callback():
+        def _apply(node_tree, value):
+            node = node_tree.nodes.get(VEHICLE_PREVIEW_NODE_DIRT_WETNESS, None)
+            if node is None:
+                return
+
+            node.outputs[0].default_value = value
+
+        def _update(self, context):
+            value = self.dirt_wetness
+            self._on_each_node_tree(_apply, value)
+
+        return _update
+
+    @staticmethod
+    def _dirt_color_update_callback():
+        def _apply(node_tree, value):
+            node = node_tree.nodes.get(VEHICLE_PREVIEW_NODE_DIRT_COLOR, None)
+            if node is None:
+                return
+
+            node.inputs[0].default_value = value[0]
+            node.inputs[1].default_value = value[1]
+            node.inputs[2].default_value = value[2]
+
+        def _update(self, context):
+            value = self.dirt_color
+            self._on_each_node_tree(_apply, value)
+
+        return _update
+
+    dirt_level: bpy.props.FloatProperty(
+        name="Dirt Level",
+        min=0.0, max=1.0,
+        subtype="FACTOR",
+        default=0.0,
+        update=_dirt_level_update_callback(),
+    )
+
+    dirt_wetness: bpy.props.FloatProperty(
+        name="Dirt Wetness",
+        min=0.0, max=1.0,
+        subtype="FACTOR",
+        default=0.0,
+        update=_dirt_wetness_update_callback(),
+    )
+
+    dirt_color: bpy.props.FloatVectorProperty(
+        name="Dirt Color",
+        min=0.0, max=1.0,
+        size=3, subtype="COLOR",
+        default=DEFAULT_DIRT_COLOR,
+        update=_dirt_color_update_callback(),
+    )
+
+    @staticmethod
+    def _define_light_id_property(light_id: int):
+        prop_name = f"light_id_{light_id}"
+        node_name = VEHICLE_PREVIEW_NODE_LIGHT_EMISSIVE_TOGGLE[light_id]
+
+        def _apply(node_tree, value):
+            node = node_tree.nodes.get(node_name, None)
+            if node is None:
+                return
+
+            node.outputs[0].default_value = value
+
+        def _update(self, context):
+            value = 1.0 if self[prop_name] else 0.0
+
+            self._on_each_node_tree(_apply, value)
+
+        VehicleRenderPreview.__annotations__[prop_name] = bpy.props.BoolProperty(
+            name=SOLLUMZ_UI_NAMES[VehicleLightID(str(light_id))],
+            default=True,
+            update=_update,
+        )
+
+    @staticmethod
+    def _define_body_color_property(paint_layer_id: int):
+        prop_name = f"body_color_{paint_layer_id}"
+        node_name = VEHICLE_PREVIEW_NODE_BODY_COLOR[paint_layer_id]
+
+        def _apply(node_tree, value):
+            node = node_tree.nodes.get(node_name, None)
+            if node is None:
+                return
+
+            node.inputs[0].default_value = value[0]
+            node.inputs[1].default_value = value[1]
+            node.inputs[2].default_value = value[2]
+
+        def _update(self, context):
+            value = self[prop_name]
+
+            self._on_each_node_tree(_apply, value)
+
+        VehicleRenderPreview.__annotations__[prop_name] = bpy.props.FloatVectorProperty(
+            name=VehiclePaintLayer(paint_layer_id).ui_label,
+            min=0.0, max=1.0,
+            size=3, subtype="COLOR",
+            default=VehicleRenderPreview.DEFAULT_BODY_COLOR,
+            update=_update,
+        )
+
+
+for light_id in range(MIN_VEHICLE_LIGHT_ID, MAX_VEHICLE_LIGHT_ID+1):
+    VehicleRenderPreview._define_light_id_property(light_id)
+for paint_layer_id in range(1, 7+1):
+    VehicleRenderPreview._define_body_color_property(paint_layer_id)
+
+
 class FragmentTemplateAsset(IntEnum):
     NONE = 0xFF
     FRED = 0
@@ -119,7 +337,6 @@ FragmentTemplateAssetEnumItems = tuple((enum.name, label, desc, enum.value) for 
 
 
 class FragmentProperties(bpy.types.PropertyGroup):
-    flags: bpy.props.IntProperty(name="Flags", default=1)  # TODO: rage::fragType::m_Flags
     unbroken_elasticity: bpy.props.FloatProperty(name="Unbroken Elasticity")
     gravity_factor: bpy.props.FloatProperty(name="Gravity Factor", default=1.0)
     buoyancy_factor: bpy.props.FloatProperty(name="Buoyancy Factor", default=1.0)
@@ -130,6 +347,8 @@ class FragmentProperties(bpy.types.PropertyGroup):
 
     lod_properties: bpy.props.PointerProperty(type=LODProperties)
 
+    vehicle_render_preview: bpy.props.PointerProperty(type=VehicleRenderPreview)
+
 
 def get_light_id_of_selection(self):
     face_mode = bpy.context.scene.tool_settings.mesh_select_mode[2]
@@ -137,61 +356,100 @@ def get_light_id_of_selection(self):
     if not face_mode or bpy.context.mode != "EDIT_MESH":
         return -1
 
-    selected_mesh_objs = [
-        obj for obj in bpy.context.selected_objects if obj.type == "MESH"]
-
-    if not selected_mesh_objs:
+    mesh_objs = bpy.context.objects_in_mode_unique_data[:]
+    if not mesh_objs:
         return -1
 
     light_id = -1
 
-    for obj in selected_mesh_objs:
+    for obj in mesh_objs:
         mesh = obj.data
         bm = bmesh.from_edit_mesh(mesh)
-
-        if not bm.loops.layers.color:
-            continue
-
-        color_layer = bm.loops.layers.color[0]
-
-        for face in bm.faces:
-            if not face.select:
+        try:
+            if not bm.loops.layers.color:
                 continue
 
-            for loop in face.loops:
-                loop_light_id = int(loop[color_layer][3] * 255)
+            color_layer = bm.loops.layers.color[0]
 
-                if light_id != -1 and loop_light_id != light_id:
-                    return -1
-                elif loop_light_id != light_id and light_id == -1:
-                    light_id = loop_light_id
+            for face in bm.faces:
+                if not face.select:
+                    continue
+
+                for loop in face.loops:
+                    loop_light_id = int(loop[color_layer][3] * 255)
+
+                    if light_id != -1 and loop_light_id != light_id:
+                        return -1
+                    elif loop_light_id != light_id and light_id == -1:
+                        light_id = loop_light_id
+        finally:
+            # Make sure the bmesh is freed after each loop iteration. It can crash
+            # while the user edits the mesh otherwise.
+            bm.free()
 
     return light_id
 
 
-PAINT_LAYER_VALUES = {
-    VehiclePaintLayer.NOT_PAINTABLE: 0,
-    VehiclePaintLayer.PRIMARY: 1,
-    VehiclePaintLayer.SECONDARY: 2,
-    VehiclePaintLayer.WHEEL: 4,
-    VehiclePaintLayer.INTERIOR_TRIM: 6,
-    VehiclePaintLayer.INTERIOR_DASH: 7,
-}
+def _get_mat_paint_layer(self: bpy.types.Material) -> int:
+    """Get material paint layer (i.e Primary, Secondary) based on the value of matDiffuseColor."""
+    paint_layer_int = VehiclePaintLayer.CUSTOM.value
+    if self.node_tree is None:
+        return paint_layer_int
+
+    matDiffuseColor = self.node_tree.nodes.get("matDiffuseColor", None)
+    if matDiffuseColor is None:
+        return paint_layer_int
+
+    x = matDiffuseColor.get("X")
+    if x != 2.0:
+        return paint_layer_int
+
+    y = matDiffuseColor.get("Y")
+    z = matDiffuseColor.get("Z")
+
+    if y != z:
+        return paint_layer_int
+
+    for paint_layer in VehiclePaintLayer:
+        if y == paint_layer.value:
+            paint_layer_int = paint_layer.value
+            break
+
+    return paint_layer_int
 
 
-def update_mat_paint_name(mat: bpy.types.Material):
+def _set_mat_paint_layer(self: bpy.types.Material, value_int: int):
+    """Set matDiffuseColor value from paint layer selection."""
+
+    if self.node_tree is None or not 0 <= value_int <= 7:
+        return
+
+    matDiffuseColor = self.node_tree.nodes.get("matDiffuseColor", None)
+    if matDiffuseColor is None:
+        return
+
+    if value_int == 0:
+        matDiffuseColor.set_vec3((1.0, 1.0, 1.0))
+        return
+
+    matDiffuseColor.set("X", 2.0)
+    matDiffuseColor.set("Y", float(value_int))
+    matDiffuseColor.set("Z", float(value_int))
+
+
+def _update_mat_paint_name(mat: bpy.types.Material):
     """Update material name to have [PAINT_LAYER] extension at the end."""
-    def get_paint_layer_name(_paint_layer: VehiclePaintLayer):
-        if _paint_layer == VehiclePaintLayer.NOT_PAINTABLE:
+    def _get_paint_layer_name(_paint_layer: VehiclePaintLayer):
+        if _paint_layer == VehiclePaintLayer.CUSTOM or _paint_layer == VehiclePaintLayer.DEFAULT:
             return ""
-        return f"[{SOLLUMZ_UI_NAMES[_paint_layer].upper()}]"
+        return f"[{_paint_layer.ui_label.upper()}]"
 
-    new_name_ext = get_paint_layer_name(mat.sollumz_paint_layer)
+    new_name_ext = _get_paint_layer_name(VehiclePaintLayer[mat.sz_paint_layer])
     mat_base_name = remove_number_suffix(mat.name).strip()
 
     # Replace existing extension
     for paint_layer in VehiclePaintLayer:
-        name_ext = get_paint_layer_name(paint_layer)
+        name_ext = _get_paint_layer_name(paint_layer)
         if name_ext in mat_base_name:
             mat_base_name = mat_base_name.replace(name_ext, "").strip()
 
@@ -249,22 +507,14 @@ def register():
     bpy.types.Scene.selected_vehicle_light_id = bpy.props.IntProperty(
         name="Light ID", get=get_light_id_of_selection)
 
-    bpy.types.Material.sollumz_paint_layer = bpy.props.EnumProperty(
-        items=(
-            (VehiclePaintLayer.NOT_PAINTABLE.value, SOLLUMZ_UI_NAMES[VehiclePaintLayer.NOT_PAINTABLE],
-             "Material cannot be painted at mod shops"),
-            (VehiclePaintLayer.PRIMARY.value, SOLLUMZ_UI_NAMES[VehiclePaintLayer.PRIMARY],
-             "Primary paint color will use this material"),
-            (VehiclePaintLayer.SECONDARY.value, SOLLUMZ_UI_NAMES[VehiclePaintLayer.SECONDARY],
-             "Secondary paint color will use this material"),
-            (VehiclePaintLayer.WHEEL.value, SOLLUMZ_UI_NAMES[VehiclePaintLayer.WHEEL],
-             "Wheel color will use this material"),
-            (VehiclePaintLayer.INTERIOR_TRIM.value, SOLLUMZ_UI_NAMES[VehiclePaintLayer.INTERIOR_TRIM],
-             "Interior trim color will use this material"),
-            (VehiclePaintLayer.INTERIOR_DASH.value, SOLLUMZ_UI_NAMES[VehiclePaintLayer.INTERIOR_DASH],
-             "Interior dash color will use this material"),
-        ),
-        name="Paint Layer", default=VehiclePaintLayer.NOT_PAINTABLE, update=lambda mat, context: update_mat_paint_name(mat))
+    bpy.types.Material.sz_paint_layer = bpy.props.EnumProperty(
+        name="Paint Layer",
+        items=VehiclePaintLayerEnumItems,
+        default=VehiclePaintLayer.CUSTOM.value,
+        get=_get_mat_paint_layer,
+        set=_set_mat_paint_layer,
+        update=lambda self, context: _update_mat_paint_name(self),
+    )
 
 
 def unregister():
@@ -284,4 +534,4 @@ def unregister():
     del bpy.types.Scene.set_custom_vehicle_light_id
     del bpy.types.Scene.select_custom_vehicle_light_id
     del bpy.types.Scene.selected_vehicle_light_id
-    del bpy.types.Material.sollumz_paint_layer
+    del bpy.types.Material.sz_paint_layer

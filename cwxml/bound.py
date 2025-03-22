@@ -93,7 +93,7 @@ class Bound(ElementTree, AbstractClass):
             self.ped_density = ValueProperty("PedDensity", 0)
             self.unk_flags = ValueProperty("UnkFlags", 0)
             self.poly_flags = ValueProperty("PolyFlags", 0)
-            self.unk_type = ValueProperty("UnkType", 1)
+            self.ref_count = ValueProperty("UnkType", 1)
         elif current_game == SollumzGame.RDR:
             self.mass = ValueProperty("Mass", 0)
             self.unk_11h = ValueProperty("Unknown_11h", 0)
@@ -241,83 +241,38 @@ class VerticesProperty(ElementProperty):
         return element
 
 
-class OctantsProperty(ElementProperty):
-    value_types = (dict)
-
-    def __init__(self, tag_name: str = "Octants", value=None):
-        super().__init__(tag_name, value or {})
-
-    @staticmethod
-    def from_xml(element: ET.Element):
-        new = OctantsProperty(element.tag, {})
-
-        if not element.text:
-            return new
-
-        octants = defaultdict(list)
-        lines = element.text.strip().split("\n")
-
-        for i, line in enumerate(lines):
-            for vert_ind in line.strip().replace(" ", "").split(","):
-                if not vert_ind:
-                    continue
-
-                octants[i].append(int(vert_ind))
-
-        new.value = octants
-
-        return new
-
-    def to_xml(self):
-        element = ET.Element(self.tag_name)
-
-        element.text = "\n"
-        lines: list[str] = []
-
-        for indices in self.value.values():
-            if not indices:
-                continue
-
-            str_indices = [str(i) for i in indices]
-
-            lines.append(",".join(str_indices))
-
-        element.text = "\n".join(lines)
-
-        return element
-
-
-class BoundGeometryBVH(BoundChild):
-    type = "GeometryBVH"
+class BoundGeometry(BoundChild):
+    type = "Geometry"
 
     def __init__(self):
         super().__init__()
+        self.geometry_center = VectorProperty("GeometryCenter")
+        # These unks are just padding, we can ignore them
+        # self.unk_float_1 = ValueProperty("UnkFloat1")
+        # self.unk_float_2 = ValueProperty("UnkFloat2")
         self.materials = MaterialsList()
         self.vertices = VerticesProperty("Vertices")
+        # self.vertices_shrunk = VerticesProperty("VerticesShrunk") # not in official CW, for debugging with custom CW
+        self.vertex_colors = VertexColorProperty("VertexColours")
         if current_game == SollumzGame.GTA:
-            self.geometry_center = VectorProperty("GeometryCenter")
-            self.vertex_colors = VertexColorProperty("VertexColours")
             self.polygons = Polygons()
         elif current_game == SollumzGame.RDR:
             self.version = AttributeProperty("version", 1)
             self.polygons = PolygonListProperty()
 
 
-class BoundGeometry(BoundGeometryBVH):
-    type = "Geometry"
+class BoundGeometryBVH(BoundGeometry):
+    type = "GeometryBVH"
 
     def __init__(self):
         super().__init__()
-        self.unk_float_1 = ValueProperty("UnkFloat1")
-        self.unk_float_2 = ValueProperty("UnkFloat2")
-        # Placeholder: Currently not implemented by CodeWalker
-        self.vertices_2 = VerticesProperty("Vertices2")
-        self.octants = OctantsProperty("Octants")
 
 
 class BoundList(ListProperty):
     list_type = BoundChild
     tag_name = "Children"
+    item_tag_name = "Item"
+    allow_none_items = True
 
     def __init__(self):
         if current_game == SollumzGame.RDR:
@@ -348,8 +303,14 @@ class BoundList(ListProperty):
                     new.value.append(BoundGeometry.from_xml(child))
                 elif bound_type == "GeometryBVH":
                     new.value.append(BoundGeometryBVH.from_xml(child))
+                elif bound_type == "None":
+                    # For fragments it is important to keep the null entries in the composite children array
+                    new.value.append(None)
 
         return new
+
+    def create_element_for_none_item(self) -> ET.Element:
+        return ET.Element(self.item_tag_name, attrib={"type": "None"})
 
 
 class Material(ElementTree):

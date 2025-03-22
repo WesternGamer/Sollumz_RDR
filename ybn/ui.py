@@ -1,5 +1,9 @@
 import bpy
-from .properties import BoundFlags, RDRBoundFlags, CollisionProperties, CollisionMatFlags, BoundProperties
+from bpy.props import (
+    BoolProperty
+)
+import os
+from .properties import BoundFlags, RDRBoundFlags, CollisionMatFlags
 from ..sollumz_properties import MaterialType, SollumType, SollumzGame, BOUND_TYPES, BOUND_POLYGON_TYPES
 from .collision_materials import collisionmats, rdr_collisionmats
 from ..sollumz_ui import SOLLUMZ_PT_OBJECT_PANEL, SOLLUMZ_PT_MAT_PANEL
@@ -63,22 +67,12 @@ class SOLLUMZ_PT_BOUND_PROPERTIES_PANEL(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return context.active_object is not None and context.active_object.sollum_type in BOUND_TYPES
+        obj = context.active_object
+        return obj and (obj.sollum_type in BOUND_TYPES or obj.sollum_type in BOUND_POLYGON_TYPES)
 
     def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        obj = context.active_object
-
-        grid = layout.grid_flow(columns=2, row_major=True)
-        grid.prop(obj.bound_properties, "inertia")
-        grid.prop(obj.bound_properties, "volume")
-
-        if obj.sollum_type == SollumType.BOUND_GEOMETRY:
-            grid.prop(obj.bound_properties, "unk_float_1")
-            grid.prop(obj.bound_properties, "unk_float_2")
+        # nothing here currently
+        pass
 
 
 class SOLLUMZ_PT_BOUND_SHAPE_PANEL(bpy.types.Panel):
@@ -95,25 +89,30 @@ class SOLLUMZ_PT_BOUND_SHAPE_PANEL(bpy.types.Panel):
     @classmethod
     def poll(self, context):
         obj = context.active_object
-        return obj and ((obj.sollum_type in BOUND_TYPES or obj.sollum_type in BOUND_POLYGON_TYPES) and obj.sollum_type != SollumType.BOUND_COMPOSITE and obj.sollum_type != SollumType.BOUND_POLY_BOX and obj.sollum_type != SollumType.BOUND_POLY_TRIANGLE)
+        return obj and (obj.sollum_type != SollumType.BOUND_COMPOSITE and obj.sollum_type != SollumType.BOUND_GEOMETRY and obj.sollum_type != SollumType.BOUND_GEOMETRYBVH and obj.sollum_type != SollumType.BOUND_CLOTH and obj.sollum_type != SollumType.BOUND_POLY_TRIANGLE)
 
     def draw(self, context):
         obj = context.active_object
+        shape = obj.sz_bound_shape
 
         self.layout.use_property_split = True
         self.layout.use_property_decorate = False
 
         grid = self.layout.grid_flow(columns=2, row_major=True)
 
-        if not obj.sollum_type in [SollumType.BOUND_GEOMETRY, SollumType.BOUND_GEOMETRYBVH, SollumType.BOUND_BOX, SollumType.BOUND_POLY_BOX, SollumType.BOUND_POLY_TRIANGLE]:
-            grid.prop(obj, "bound_radius")
-        if obj.sollum_type == SollumType.BOUND_CYLINDER or obj.sollum_type == SollumType.BOUND_POLY_CYLINDER or obj.sollum_type == SollumType.BOUND_POLY_CAPSULE:
-            grid.prop(obj, "bound_length")
-        if obj.sollum_type == SollumType.BOUND_BOX:
-            grid.prop(obj, "bound_dimensions")
-        if obj.sollum_type in BOUND_TYPES:
-            grid.prop(obj, "margin")
-
+        match obj.sollum_type:
+            case SollumType.BOUND_BOX | SollumType.BOUND_POLY_BOX:
+                grid.prop(shape, "box_extents")
+            case SollumType.BOUND_SPHERE | SollumType.BOUND_POLY_SPHERE:
+                grid.prop(shape, "sphere_radius")
+            case SollumType.BOUND_CAPSULE | SollumType.BOUND_POLY_CAPSULE:
+                grid.prop(shape, "capsule_radius")
+                grid.prop(shape, "capsule_length")
+            case SollumType.BOUND_CYLINDER | SollumType.BOUND_POLY_CYLINDER | SollumType.BOUND_DISC:
+                grid.prop(shape, "cylinder_radius")
+                grid.prop(shape, "cylinder_length")
+            case _:
+                pass
 
 class SOLLUMZ_PT_BOUND_FLAGS_PANEL(bpy.types.Panel):
     bl_label = "Composite Flags"
@@ -180,6 +179,8 @@ class SOLLUMZ_PT_MATERIAL_COL_FLAGS_PANEL(bpy.types.Panel):
 class SOLLUMZ_UL_COLLISION_MATERIALS_LIST(bpy.types.UIList):
     bl_idname = "SOLLUMZ_UL_COLLISION_MATERIALS_LIST"
 
+    use_filter_favorites: BoolProperty(name="Filter Favorites")
+
     def draw_item(
         self, context, layout, data, item, icon, active_data, active_propname, index
     ):
@@ -192,10 +193,58 @@ class SOLLUMZ_UL_COLLISION_MATERIALS_LIST(bpy.types.UIList):
         if self.layout_type in {"DEFAULT", "COMPACT"}:
             row = layout.row()
             row.label(text=name, icon="MATERIAL")
+            favorite_icon = "SOLO_ON" if item.favorite else "SOLO_OFF"
+            row.prop(item, "favorite", text="", toggle=True, emboss=False, icon=favorite_icon)
         elif self.layout_type in {"GRID"}:
             layout.alignment = "CENTER"
             layout.prop(item, "name",
                         text=name, emboss=False, icon="MATERIAL")
+
+    def draw_filter(self, context, layout):
+        row = layout.row()
+
+        subrow = row.row(align=True)
+        subrow.prop(self, "filter_name", text="")
+        subrow.prop(self, "use_filter_invert", text="", toggle=True, icon="ARROW_LEFTRIGHT")
+
+        subrow = row.row(align=True)
+        subrow.prop(self, "use_filter_sort_alpha", text="", toggle=True, icon="SORTALPHA")
+        icon = "SORT_DESC" if self.use_filter_sort_reverse else "SORT_ASC"
+        subrow.prop(self, "use_filter_sort_reverse", text="", toggle=True, icon=icon)
+
+        subrow = row.row(align=True)
+        subrow.prop(self, "use_filter_favorites", text="", toggle=True, icon="SOLO_ON")
+
+    def filter_items(self, context, data, propname):
+        collision_materials = getattr(data, propname)
+        helper_funcs = bpy.types.UI_UL_list
+
+        # Default return values.
+        flt_flags = []
+        flt_neworder = []
+
+        # Filtering by name
+        if self.filter_name:
+            filter_name = self.filter_name.replace(" ", "").replace("_", "")
+            flt_flags = helper_funcs.filter_items_by_name(
+                filter_name, self.bitflag_filter_item, collision_materials, "search_name",
+                reverse=self.use_filter_sort_reverse
+            )
+
+        # Filter favorites.
+        if self.use_filter_favorites:
+            if not flt_flags:
+                flt_flags = [self.bitflag_filter_item] * len(collision_materials)
+
+            for idx, collision_material in enumerate(collision_materials):
+                if not collision_material.favorite:
+                    flt_flags[idx] &= ~self.bitflag_filter_item
+
+        # Reorder by name or average weight.
+        if self.use_filter_sort_alpha:
+            flt_neworder = helper_funcs.sort_items_by_name(collision_materials, "search_name")
+
+        return flt_flags, flt_neworder
 
 
 class SOLLUMZ_UL_FLAG_PRESET_LIST(bpy.types.UIList):
@@ -257,35 +306,18 @@ class SOLLUMZ_PT_COLLISION_TOOL_PANEL(bpy.types.Panel):
         pass
 
 
-class SOLLUMZ_PT_COLLISION_SPLIT_TOOL_PANEL(bpy.types.Panel):
-    bl_label = "Split Collision"
-    bl_idname = "SOLLUMZ_PT_COLLISION_SPLIT_TOOL_PANEL"
-    bl_category = "Sollumz Tools"
+class CollisionToolChildPanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 0
     bl_parent_id = SOLLUMZ_PT_COLLISION_TOOL_PANEL.bl_idname
-
-    def draw_header(self, context):
-        self.layout.label(text="", icon="SCULPTMODE_HLT")
-
-    def draw(self, context):
-        layout = self.layout
-        row = layout.row()
-        row.operator(ybn_ops.SOLLUMZ_OT_split_collision.bl_idname,
-                     icon="SCULPTMODE_HLT")
-        row.prop(context.scene, "split_collision_count")
+    bl_category = SOLLUMZ_PT_COLLISION_TOOL_PANEL.bl_category
 
 
-class SOLLUMZ_PT_CREATE_BOUND_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_CREATE_BOUND_PANEL(CollisionToolChildPanel, bpy.types.Panel):
     bl_label = "Create Bounds"
     bl_idname = "SOLLUMZ_PT_CREATE_BOUND_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_COLLISION_TOOL_PANEL.bl_idname
-    bl_order = 1
+    bl_order = 0
 
     def draw_header(self, context):
         # Example property to display a checkbox, can be anything
@@ -301,36 +333,42 @@ class SOLLUMZ_PT_CREATE_BOUND_PANEL(bpy.types.Panel):
 
         row = layout.row()
         row.prop(context.scene, "create_seperate_composites")
-        row.prop(context.scene, "composite_apply_default_flag_preset")
         row.prop(context.scene, "center_composite_to_selection")
 
         layout.separator()
 
-        row = layout.row()
+        row = layout.row(align=True)
         row.operator(ybn_ops.SOLLUMZ_OT_create_bound.bl_idname, icon="CUBE")
         row.prop(context.scene, "create_bound_type", text="")
 
-        row = layout.row()
+        row = layout.row(align=True)
         row.operator(
             ybn_ops.SOLLUMZ_OT_create_polygon_bound.bl_idname, icon="MESH_CAPSULE")
         row.prop(context.scene, "create_poly_bound_type", text="")
 
         layout.separator()
 
-        row = layout.row()
-        row.operator(
-            ybn_ops.SOLLUMZ_OT_create_polygon_box_from_verts.bl_idname, icon="GROUP_VERTEX")
-        row.prop(context.scene, "poly_bound_type_verts", text="")
+        split = layout.split(factor=0.5, align=True)
+        row = split.row(align=True)
+        box_from_verts_op = row.operator(
+            ybn_ops.SOLLUMZ_OT_create_polygon_box_from_verts.bl_idname, icon="GROUP_VERTEX"
+        )
+        subrow = split.row(align=True)
+        subrow.prop(context.scene, "poly_bound_type_verts", text="")
+        if bpy.app.version >= (4, 1, 0):
+            subrow.prop(context.window_manager, "sz_create_bound_box_parent", text="", placeholder="Parent")
+        else:
+            subrow.prop(context.window_manager, "sz_create_bound_box_parent", text="")
+
+        box_parent = context.window_manager.sz_create_bound_box_parent
+        box_from_verts_op.parent_name = box_parent.name if box_parent else ""
+        box_from_verts_op.sollum_type = context.scene.poly_bound_type_verts
 
 
-class SOLLUMZ_PT_CREATE_MATERIAL_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_CREATE_MATERIAL_PANEL(CollisionToolChildPanel, bpy.types.Panel):
     bl_label = "Create Collision Material"
     bl_idname = "SOLLUMZ_PT_CREATE_MATERIAL_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_COLLISION_TOOL_PANEL.bl_idname
-    bl_order = 2
+    bl_order = 1
 
     def draw_header(self, context):
         # Example property to display a checkbox, can be anything
@@ -339,7 +377,8 @@ class SOLLUMZ_PT_CREATE_MATERIAL_PANEL(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.template_list(
-            SOLLUMZ_UL_COLLISION_MATERIALS_LIST.bl_idname, "", context.scene, "collision_materials", context.scene, "collision_material_index"
+            SOLLUMZ_UL_COLLISION_MATERIALS_LIST.bl_idname, "",
+            context.window_manager, "sz_collision_materials", context.window_manager, "sz_collision_material_index"
         )
         row = layout.row()
         row.operator(ybn_ops.SOLLUMZ_OT_create_collision_material.bl_idname)
@@ -353,15 +392,10 @@ class SOLLUMZ_PT_CREATE_MATERIAL_PANEL(bpy.types.Panel):
             ybn_ops.SOLLUMZ_OT_convert_non_collision_materials_to_selected.bl_idname)
 
 
-class SOLLUMZ_PT_FLAG_PRESETS_PANEL(bpy.types.Panel):
+class SOLLUMZ_PT_FLAG_PRESETS_PANEL(CollisionToolChildPanel, bpy.types.Panel):
     bl_label = "Flag Presets"
     bl_idname = "SOLLUMZ_PT_FLAG_PRESETS_PANEL"
-    bl_category = "Sollumz Tools"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = SOLLUMZ_PT_COLLISION_TOOL_PANEL.bl_idname
-    bl_order = 3
+    bl_order = 2
 
     def draw_header(self, context):
         # Example property to display a checkbox, can be anything
@@ -372,13 +406,28 @@ class SOLLUMZ_PT_FLAG_PRESETS_PANEL(bpy.types.Panel):
 
         row = layout.row()
         row.template_list(SOLLUMZ_UL_FLAG_PRESET_LIST.bl_idname, "flag_presets",
-                          context.scene, "flag_presets", context.scene, "flag_preset_index")
+                          context.window_manager, "sz_flag_presets", context.window_manager, "sz_flag_preset_index")
         col = row.column(align=True)
         col.operator(ybn_ops.SOLLUMZ_OT_save_flag_preset.bl_idname, text="", icon="ADD")
         col.operator(ybn_ops.SOLLUMZ_OT_delete_flag_preset.bl_idname, text="", icon="REMOVE")
+        col.separator()
+        col.menu(SOLLUMZ_MT_flag_presets_context_menu.bl_idname, icon="DOWNARROW_HLT", text="")
 
         row = layout.row()
         row.operator(ybn_ops.SOLLUMZ_OT_load_flag_preset.bl_idname, icon='CHECKMARK')
 
         row = layout.row()
         row.operator(ybn_ops.SOLLUMZ_OT_clear_col_flags.bl_idname, icon='SHADERFX')
+
+
+class SOLLUMZ_MT_flag_presets_context_menu(bpy.types.Menu):
+    bl_label = "Flag Presets Specials"
+    bl_idname = "SOLLUMZ_MT_flag_presets_context_menu"
+
+    def draw(self, _context):
+        layout = self.layout
+
+        from .properties import get_flag_presets_path
+        path = get_flag_presets_path()
+        layout.enabled = os.path.exists(path)
+        layout.operator("wm.path_open", text="Open Presets File").filepath = path

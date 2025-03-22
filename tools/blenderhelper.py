@@ -189,8 +189,10 @@ def get_selected_vertices(obj):
 def get_selected_edit_vertices(mesh: bpy.types.Mesh) -> list[Vector]:
     """Get selected vertices of edit mode``mesh``."""
     bm = bmesh.from_edit_mesh(mesh)
-
-    return [Vector(v.co) for v in bm.verts if v.select]
+    try:
+        return [Vector(v.co) for v in bm.verts if v.select]
+    finally:
+        bm.free()
 
 
 def find_parent(obj, parent_name):
@@ -290,6 +292,17 @@ def get_object_with_children(obj):
     return objs
 
 
+# Sollumz types for which Object.hide_render should be set to false when created.
+_types_to_hide_in_render = {
+    SollumType.BOUND_BOX, SollumType.BOUND_SPHERE, SollumType.BOUND_CAPSULE, SollumType.BOUND_CYLINDER,
+    SollumType.BOUND_DISC, SollumType.BOUND_CLOTH, SollumType.BOUND_GEOMETRY, SollumType.BOUND_GEOMETRYBVH,
+    SollumType.BOUND_COMPOSITE, SollumType.BOUND_POLY_BOX, SollumType.BOUND_POLY_CAPSULE,
+    SollumType.BOUND_POLY_CYLINDER, SollumType.BOUND_POLY_SPHERE, SollumType.BOUND_POLY_TRIANGLE,
+
+    SollumType.SHATTERMAP,
+}
+
+
 def create_blender_object(sollum_type: SollumType, name: Optional[str] = None, object_data: Optional[bpy.types.Mesh] = None, sollum_game_type: SollumzGame = SollumzGame.GTA) -> bpy.types.Object:
     """Create a bpy object of the given sollum type and link it to the scene."""
     name = name or SOLLUMZ_UI_NAMES[sollum_type]
@@ -297,6 +310,7 @@ def create_blender_object(sollum_type: SollumType, name: Optional[str] = None, o
     obj = bpy.data.objects.new(name, object_data)
     obj.sollum_type = sollum_type
     obj.sollum_game_type = sollum_game_type
+    obj.hide_render = sollum_type in _types_to_hide_in_render
     bpy.context.collection.objects.link(obj)
 
     return obj
@@ -309,6 +323,7 @@ def create_empty_object(sollum_type: SollumType, name: Optional[str] = None, sol
     obj.empty_display_size = 0
     obj.sollum_type = sollum_type
     obj.sollum_game_type = sollum_game_type
+    obj.hide_render = sollum_type in _types_to_hide_in_render
     bpy.context.collection.objects.link(obj)
 
     return obj
@@ -329,25 +344,28 @@ def add_armature_modifier(obj: bpy.types.Object, armature_obj: bpy.types.Object)
 
 
 def add_child_of_bone_constraint(obj: bpy.types.Object, armature_obj: bpy.types.Object, target_bone: Optional[str] = None):
-    """Add Child Of constraint and set bone. Also sets bone target space and owner space so that parenting evaluated properly."""
-    constraint: bpy.types.ChildOfConstraint = obj.constraints.new("CHILD_OF")
-    constraint.target = armature_obj
+    """Add constraint to parent the object to a bone. Also sets target space and owner space so that parenting is evaluated properly.
 
+    Note: we are using COPY_TRANSFORMS instead of CHILD_OF constraint because CHILD_OF does not behave as expected when
+    ``obj`` is a child of the ``armature_obj`` hierarchy. It applies the parent transform and then the offset transform
+    coming from the CHILD_OF constraint. Instead, we just want ``obj`` to use the bone transform directly.
+    In previous versions, Sollumz used CHILD_OF but changing the target/owner space, which seemed to work but was
+    possibly undefined behaviour as the target/owner space properties are not shown in the UI, unlike with other
+    constraints. After Blender 4.2, this approach broke and we had to change to COPY_TRANSFORMS.
+    """
+    constraint = obj.constraints.new("COPY_TRANSFORMS")
+    constraint.target = armature_obj
     if target_bone is not None:
         constraint.subtarget = target_bone
-
     set_child_of_constraint_space(constraint)
-
-    constraint.inverse_matrix = Matrix()
-
     return constraint
 
 
-def set_child_of_constraint_space(constraint: bpy.types.ChildOfConstraint):
-    """Set Child Of constraing target space and owner space such that it matches the behavior of bone parenting
-    (owner_space = 'LOCAL', target_space = 'POSE')"""
-    constraint.owner_space = "LOCAL"
+def set_child_of_constraint_space(constraint: bpy.types.CopyTransformsConstraint):
+    """Set constraint target space and owner space such that it matches the behavior of bone parenting."""
+    constraint.mix_mode = "BEFORE_FULL"
     constraint.target_space = "POSE"
+    constraint.owner_space = "LOCAL"
 
 
 def get_bone_pose_matrix(obj: bpy.types.Object) -> Matrix:
@@ -395,10 +413,10 @@ def get_child_of_pose_bone(obj: bpy.types.Object) -> Optional[bpy.types.PoseBone
     return armature.pose.bones.get(constraint.subtarget)
 
 
-def get_child_of_constraint(obj: bpy.types.Object) -> Optional[bpy.types.ChildOfConstraint]:
+def get_child_of_constraint(obj: bpy.types.Object) -> Optional[bpy.types.CopyTransformsConstraint]:
     """Get first child of constraint with armature target and bone subtarget set. Returns None if not found."""
     for constraint in obj.constraints:
-        if constraint.type != "CHILD_OF":
+        if constraint.type != "COPY_TRANSFORMS":
             continue
 
         if constraint.target and constraint.target.type == "ARMATURE" and constraint.subtarget:
@@ -457,4 +475,3 @@ def find_bsdf_and_material_output(material: bpy.types.Material) -> Tuple[bpy.typ
             bsdf = node
 
     return bsdf, material_output
-

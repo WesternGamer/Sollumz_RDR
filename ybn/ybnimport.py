@@ -1,7 +1,6 @@
 import os
 import bpy
 from typing import Optional
-
 import numpy as np
 from numpy.typing import NDArray
 from .properties import CollisionMatFlags, set_collision_mat_raw_flags
@@ -24,7 +23,14 @@ from ..cwxml.bound import (
 )
 from ..sollumz_properties import SollumType, SOLLUMZ_UI_NAMES, SollumzGame
 from .collision_materials import create_collision_material_from_index, create_collision_material_from_name
-from ..tools.meshhelper import create_box, create_color_attr, create_disc
+from ..tools.meshhelper import (
+    create_box,
+    create_sphere,
+    create_cylinder,
+    create_capsule,
+    create_disc,
+    create_color_attr,
+)
 from ..tools.utils import get_direction_of_vectors, get_distance_of_vectors, abs_vector
 from ..tools.blenderhelper import create_blender_object, create_empty_object
 from mathutils import Matrix, Vector
@@ -49,7 +55,6 @@ def create_bound_composite(composite_xml: BoundComposite, name: Optional[str] = 
     current_game = SollumzGame.GTA
     obj = create_empty_object(SollumType.BOUND_COMPOSITE, name, current_game)
     obj.sollum_game_type = current_game
-    set_bound_properties(composite_xml, obj)
 
     for child in composite_xml.children:
         child_obj = create_bound_object(child)
@@ -146,50 +151,45 @@ def set_composite_flags(bound_xml: BoundChild, bound_obj: bpy.types.Object):
 
 def create_bound_box(bound_xml: BoundChild):
     obj = create_bound_child_mesh(bound_xml, SollumType.BOUND_BOX)
-
-    obj.bound_dimensions = abs_vector(bound_xml.box_max - bound_xml.box_min)
-    obj.data.transform(Matrix.Translation(bound_xml.box_center))
-
+    bound_dimensions = abs_vector(bound_xml.box_max - bound_xml.box_min)
+    create_box(obj.data, 1, Matrix.Diagonal(bound_dimensions))
+    obj.location += bound_xml.box_center
     return obj
 
 
 def create_bound_sphere(bound_xml: BoundChild):
     obj = create_bound_child_mesh(bound_xml, SollumType.BOUND_SPHERE)
-
-    obj.bound_radius = bound_xml.sphere_radius
-
+    create_sphere(obj.data, bound_xml.sphere_radius)
+    obj.location += bound_xml.box_center
     return obj
 
 
 def create_bound_capsule(bound_xml: BoundChild):
     obj = create_bound_child_mesh(bound_xml, SollumType.BOUND_CAPSULE)
-    if current_game == SollumzGame.GTA:
-        bbmin, bbmax = bound_xml.box_min, bound_xml.box_max
-        obj.bound_length = bbmax.z - bbmin.z
-    elif current_game == SollumzGame.RDR:
-        obj.margin = bound_xml.margin
-    obj.bound_radius = bound_xml.sphere_radius
-
+    bbmin, bbmax = bound_xml.box_min, bound_xml.box_max
+    extent = bbmax - bbmin
+    radius = extent.x * 0.5
+    length = extent.y - (radius * 2.0)
+    create_capsule(obj.data, radius=radius, length=length, axis="Y")
+    obj.location += bound_xml.box_center
     return obj
 
 
 def create_bound_cylinder(bound_xml: BoundChild):
     obj = create_bound_child_mesh(bound_xml, SollumType.BOUND_CYLINDER)
-
     bbmin, bbmax = bound_xml.box_min, bound_xml.box_max
     extent = bbmax - bbmin
-    obj.bound_length = extent.y
-    obj.bound_radius = extent.x * 0.5
-
+    radius = extent.x * 0.5
+    length = extent.y
+    create_cylinder(obj.data, radius=radius, length=length, axis="Y")
+    obj.location += bound_xml.box_center
     return obj
 
 
 def create_bound_disc(bound_xml: BoundChild):
     obj = create_bound_child_mesh(bound_xml, SollumType.BOUND_DISC)
-
-    obj.bound_radius = bound_xml.sphere_radius
     create_disc(obj.data, bound_xml.sphere_radius, bound_xml.margin * 2)
-
+    obj.location += bound_xml.box_center
     return obj
 
 
@@ -205,9 +205,6 @@ def create_bound_geometry(geom_xml: BoundGeometry):
     
     geom_obj = create_blender_object(SollumType.BOUND_GEOMETRY, object_data=mesh, sollum_game_type=current_game)
     set_bound_child_properties(geom_xml, geom_obj)
-
-    set_bound_geometry_properties(geom_xml, geom_obj)
-
     return geom_obj
 
 
@@ -289,8 +286,6 @@ def create_bvh_polys(bvh: BoundGeometryBVH, materials: list[bpy.types.Material],
                 continue
 
             poly_obj = poly_to_obj(poly, materials, bvh.vertices)
-
-            bpy.context.collection.objects.link(poly_obj)
             poly_obj.location += bvh.geometry_center
             poly_obj.parent = bvh_obj
     elif current_game == SollumzGame.RDR:
@@ -299,9 +294,7 @@ def create_bvh_polys(bvh: BoundGeometryBVH, materials: list[bpy.types.Material],
                 continue
 
             poly_obj = poly_to_obj(poly, materials, bvh.vertices)
-
-            bpy.context.collection.objects.link(poly_obj)
-            poly_obj.location += (bvh.box_min+bvh.box_max)*0.5
+            poly_obj.location += bvh.geometry_center
             poly_obj.parent = bvh_obj
 
 
@@ -315,10 +308,7 @@ def init_poly_obj(poly, sollum_type, materials):
     if mat_index < len(materials):
         mesh.materials.append(materials[mat_index])
 
-    obj = bpy.data.objects.new(name, mesh)
-    obj.sollum_type = sollum_type.value
-    obj.sollum_game_type = current_game
-
+    obj = create_blender_object(sollum_type, name, mesh, current_game)
     return obj
 
 
@@ -400,30 +390,35 @@ def create_poly_box(poly, materials, vertices):
 
     return obj
 
+
 def create_poly_sphere(poly, materials, vertices):
     sphere = init_poly_obj(poly, SollumType.BOUND_POLY_SPHERE, materials)
     if current_game == SollumzGame.GTA:
-        sphere.bound_radius = poly.radius
-        sphere.location = vertices[poly.v]
+        radius = poly.radius
+        location = vertices[poly.v]
     elif current_game == SollumzGame.RDR:
-        sphere.bound_radius = poly[3]
-        sphere.location = vertices[poly[2]]
+        radius = poly[3]
+        location = vertices[poly[2]]
+    create_sphere(sphere.data, radius)
+    sphere.location = location
     return sphere
+
 
 def create_poly_capsule(poly, materials, vertices):
     capsule = init_poly_obj(poly, SollumType.BOUND_POLY_CAPSULE, materials)
     if current_game == SollumzGame.GTA:
         v1 = vertices[poly.v1]
         v2 = vertices[poly.v2]
-        rot = get_direction_of_vectors(v1, v2)
-        capsule.bound_radius = poly.radius * 2
-        capsule.bound_length = ((v1 - v2).length + (poly.radius * 2)) / 2
+        radius = poly.radius
     elif current_game == SollumzGame.RDR:
         v1 = vertices[poly[2]]
         v2 = vertices[poly[3]]
-        rot = get_direction_of_vectors(v1, v2)
-        capsule.bound_radius = poly[4] * 2
-        capsule.bound_length = ((v1 - v2).length + (poly[4] * 2)) / 2
+        radius = poly[4]
+
+    rot = get_direction_of_vectors(v1, v2)
+    length = (v1 - v2).length
+
+    create_capsule(capsule.data, radius=radius, length=length, axis="Z")
 
     capsule.location = (v1 + v2) / 2
     capsule.rotation_euler = rot
@@ -441,10 +436,12 @@ def create_poly_cylinder(poly, materials, vertices):
         v2 = vertices[poly[3]]
         radius = poly[4]
 
+    length = get_distance_of_vectors(v1, v2)
+
     rot = get_direction_of_vectors(v1, v2)
 
-    cylinder.bound_radius = radius
-    cylinder.bound_length = get_distance_of_vectors(v1, v2)
+    create_cylinder(cylinder.data, radius=radius, length=length, axis="Z")
+
     cylinder.matrix_world = Matrix()
 
     cylinder.location = (v1 + v2) / 2
@@ -493,7 +490,7 @@ def create_bound_mesh_data(
     mesh.from_pydata(verts, [], faces)
 
     if colors is not None:
-        create_color_attr(mesh, colors)
+        create_color_attr(mesh, 0, initial_values=colors)
 
     apply_bound_geom_materials(mesh, triangles, materials)
 
@@ -556,21 +553,11 @@ def get_bound_geom_mesh_data(
     return verts, faces, np.array(colors, dtype=np.float64) if colors is not None else None
 
 
-def set_bound_geometry_properties(geom_xml: BoundGeometry, geom_obj: bpy.types.Object):
-    geom_obj.bound_properties.unk_float_1 = geom_xml.unk_float_1
-    geom_obj.bound_properties.unk_float_2 = geom_xml.unk_float_2
-
-
 def set_bound_properties(bound_xml: Bound, bound_obj: bpy.types.Object, game: SollumzGame = SollumzGame.GTA):
-    if current_game == SollumzGame.GTA:
-        bound_obj.margin = bound_xml.margin
-        bound_obj.bound_properties.volume = bound_xml.volume
-    elif current_game == SollumzGame.RDR:
+    if current_game == SollumzGame.RDR:
         bound_obj.bound_properties.mass = bound_xml.mass
-    bound_obj.bound_properties.inertia = bound_xml.inertia
 
 
 def set_bound_child_properties(bound_xml: BoundChild, bound_obj: bpy.types.Object):
-    set_bound_properties(bound_xml, bound_obj)
     set_composite_flags(bound_xml, bound_obj)
     set_composite_transforms(bound_xml.composite_transform, bound_obj)

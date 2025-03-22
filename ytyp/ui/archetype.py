@@ -1,18 +1,18 @@
 import bpy
 from ...tabbed_panels import TabbedPanelHelper, TabPanel
-from ...sollumz_ui import FlagsPanel, TimeFlagsPanel
 from ...sollumz_properties import AssetType, ArchetypeType, SollumzGame
 from ..utils import get_selected_archetype, get_selected_ytyp
-from .ytyp import SOLLUMZ_PT_YTYP_TOOL_PANEL
+from .ytyp import YtypToolChildPanel
+from ...shared.multiselection import (
+    MultiSelectUIFlagsPanel,
+    MultiSelectUITimeFlagsPanel,
+)
 
 
-class SOLLUMZ_PT_ARCHETYPE_TABS_PANEL(TabbedPanelHelper, bpy.types.Panel):
+class SOLLUMZ_PT_ARCHETYPE_TABS_PANEL(YtypToolChildPanel, TabbedPanelHelper, bpy.types.Panel):
     bl_label = "Archetype"
     bl_idname = "SOLLUMZ_PT_ARCHETYPE_TABS_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
     bl_options = {"HIDE_HEADER"}
-    bl_parent_id = SOLLUMZ_PT_YTYP_TOOL_PANEL.bl_idname
 
     default_tab = "SOLLUMZ_PT_ARCHETYPE_PANEL"
 
@@ -26,14 +26,27 @@ class SOLLUMZ_PT_ARCHETYPE_TABS_PANEL(TabbedPanelHelper, bpy.types.Panel):
         self.layout.separator()
 
 
-class SOLLUMZ_PT_ARCHETYPE_PANEL(TabPanel, bpy.types.Panel):
-    bl_label = "Archetype"
-    bl_idname = "SOLLUMZ_PT_ARCHETYPE_PANEL"
+class ArchetypeChildTabPanel(TabPanel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_options = {"HIDE_HEADER"}
+    bl_parent_id = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL.bl_idname
+    bl_category = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL.bl_category
+
+    parent_tab_panel = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL
+
+
+class ArchetypeChildPanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_parent_id = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL.bl_idname
+    bl_category = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL.bl_category
 
-    parent_tab_panel = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL
+
+class SOLLUMZ_PT_ARCHETYPE_PANEL(ArchetypeChildTabPanel, bpy.types.Panel):
+    bl_label = "Archetype"
+    bl_idname = "SOLLUMZ_PT_ARCHETYPE_PANEL"
+
     icon = "SEQ_STRIP_META"
 
     bl_order = 0
@@ -42,53 +55,53 @@ class SOLLUMZ_PT_ARCHETYPE_PANEL(TabPanel, bpy.types.Panel):
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False
-        selected_archetype = get_selected_archetype(context)
-        selected_ytyp = get_selected_ytyp(context)
-        layout.prop(selected_archetype, "type")
-        layout.prop(selected_archetype, "name")
-        if selected_ytyp.game == SollumzGame.RDR:
-             layout.prop(selected_archetype, "load_flags")
-             layout.prop(selected_archetype, "avoidanceflags")
-        layout.prop(selected_archetype, "special_attribute")
+        ytyp = get_selected_ytyp(context)
+        selection = ytyp.archetypes.selection
+        active = ytyp.archetypes.active_item
+        layout.prop(selection, "type")
+        layout.prop(selection, "name")
+        if ytyp.game == SollumzGame.RDR:
+             layout.prop(selection, "load_flags")
+             layout.prop(selection, "avoidanceflags")
+        layout.prop(selection, "special_attribute")
 
-        if selected_archetype.asset_type != AssetType.ASSETLESS:
-            layout.prop(selected_archetype, "texture_dictionary")
-            layout.prop(selected_archetype, "clip_dictionary")
-            layout.prop(selected_archetype, "drawable_dictionary")
-            layout.prop(selected_archetype, "physics_dictionary")
-            layout.prop(selected_archetype, "hd_texture_dist")
-            layout.prop(selected_archetype, "lod_dist")
+        if active.asset_type != AssetType.ASSETLESS:
+            layout.prop(selection, "texture_dictionary")
+            layout.prop(selection, "clip_dictionary")
+            layout.prop(selection, "drawable_dictionary")
+            layout.prop(selection, "physics_dictionary")
+            layout.prop(selection, "hd_texture_dist")
+            layout.prop(selection, "lod_dist")
 
-        layout.prop(selected_archetype, "asset_type")
-        layout.prop(selected_archetype, "asset_name")
-        if selected_ytyp.game == SollumzGame.RDR:
-            layout.prop(selected_archetype, "guid")
-            layout.prop(selected_archetype, "unknown_1")
-        layout.prop(selected_archetype, "asset", text="Linked Object")
+        layout.prop(selection, "asset_type")
+        layout.prop(selection, "asset_name")
+        if ytyp.game == SollumzGame.RDR:
+            layout.prop(selection, "guid")
+            layout.prop(selection, "unknown_1")
+
+        row = layout.row()
+        row.enabled = not ytyp.archetypes.has_multiple_selection
+        row.prop(active, "asset", text="Linked Object")
 
 
-class SOLLUMZ_PT_ARCHETYPE_FLAGS_PANEL(TabPanel, FlagsPanel, bpy.types.Panel):
+class SOLLUMZ_PT_ARCHETYPE_FLAGS_PANEL(ArchetypeChildTabPanel, MultiSelectUIFlagsPanel, bpy.types.Panel):
     bl_idname = "SOLLUMZ_PT_ARCHETYPE_FLAGS_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_parent_id = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL.bl_idname
-
-    parent_tab_panel = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL
     icon = "BOOKMARKS"
 
     bl_order = 2
 
-    def get_flags(self, context):
+    def get_flags_active(self, context):
         selected_archetype = get_selected_archetype(context)
         return selected_archetype.flags
 
+    def get_flags_selection(self, context):
+        selected_ytyp = get_selected_ytyp(context)
+        return selected_ytyp.archetypes.selection.flags
 
-class SOLLUMZ_PT_TIME_FlAGS_PANEL(TimeFlagsPanel, bpy.types.Panel):
+
+class SOLLUMZ_PT_TIME_FlAGS_PANEL(ArchetypeChildPanel, MultiSelectUITimeFlagsPanel, bpy.types.Panel):
     bl_idname = "SOLLUMZ_PT_TIME_FLAGS_PANEL"
     bl_label = "Time Flags"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_parent_id = SOLLUMZ_PT_ARCHETYPE_TABS_PANEL.bl_idname
     select_operator = "sollumz.ytyp_time_flags_select_range"
     clear_operator = "sollumz.ytyp_time_flags_clear"
 
@@ -102,5 +115,10 @@ class SOLLUMZ_PT_TIME_FlAGS_PANEL(TimeFlagsPanel, bpy.types.Panel):
     def draw_header(self, context):
         self.layout.label(text="", icon="TIME")
 
-    def get_flags(self, context):
-        return get_selected_archetype(context).time_flags
+    def get_flags_active(self, context):
+        selected_archetype = get_selected_archetype(context)
+        return selected_archetype.time_flags
+
+    def get_flags_selection(self, context):
+        selected_ytyp = get_selected_ytyp(context)
+        return selected_ytyp.archetypes.selection.time_flags

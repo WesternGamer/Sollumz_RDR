@@ -1,8 +1,7 @@
 import os
-import numpy
 from numpy.typing import NDArray
 from math import sqrt
-from typing import Iterable, Tuple
+from typing import Tuple
 from mathutils import Vector, Quaternion, Matrix
 
 
@@ -26,41 +25,16 @@ def int_to_bool_list(num, size=None):
     return [bool(num & (1 << n)) for n in range(size or 32)]
 
 
-def flag_prop_to_list(prop_type, data_block, size=None):
+def flag_prop_to_list(flag_names, data_block, size=None):
     size = (size or 32) + 1
     flags = [False] * size
     i = 0
-    for flag_name in prop_type.__annotations__:
+    for flag_name in flag_names:
         if i < size:
             if flag_name in data_block:
                 flags[i] = data_block[flag_name] != 0
         i += 1
     return flags
-
-
-def divide_list(list, d):
-    result = []
-    for item in list:
-        answer = item / d
-        result.append(answer)
-    return result
-
-
-def float32_list(list):
-    result = []
-    for item in list:
-        result.append(numpy.float32(item))
-    return result
-
-
-def float32_tuple(items: Iterable):
-    """Cast all ``items`` to float32 and return a tuple containing the items."""
-    result: list[numpy.float32] = []
-
-    for item in items:
-        result.append(numpy.float32(item))
-
-    return tuple(result)
 
 
 def abs_vector(v):

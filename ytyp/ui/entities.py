@@ -1,50 +1,64 @@
 import bpy
 from ...tabbed_panels import TabbedPanelHelper, TabPanel
-from ...sollumz_ui import BasicListHelper, FlagsPanel, FilterListHelper, draw_list_with_add_remove
-from ..properties.ytyp import ArchetypeType
+from ..properties.ytyp import ArchetypeType, MloEntitySelectionAccess
 from ..properties.mlo import EntityProperties, MloEntityProperties
-from ..utils import get_selected_archetype, get_selected_entity
+from ..utils import get_selected_ytyp, get_selected_archetype, get_selected_entity
 from .extensions import ExtensionsListHelper, ExtensionsPanelHelper
-from .mlo import SOLLUMZ_PT_MLO_PANEL
+from .mlo import MloChildTabPanel
+from ...shared.multiselection import (
+    MultiSelectCollection,
+    MultiSelectUIListMixin,
+    multiselect_ui_draw_list,
+    MultiSelectUIFlagsPanel,
+)
+from ..operators import ytyp as ytyp_ops
 
 
-class SOLLUMZ_UL_ENTITIES_LIST(BasicListHelper, FilterListHelper, bpy.types.UIList):
+def entities_filter_items(
+    entities: MultiSelectCollection[MloEntityProperties,  MloEntitySelectionAccess],
+    filter_name: str,
+    use_filter_sort_reverse: bool,
+    use_filter_sort_alpha: bool,
+) -> tuple[list[int], list[int]]:
+    from ...shared.multiselection import _default_filter_items, _BITFLAG_FILTER_ITEM
+    filter_flags, filter_order = _default_filter_items(
+        entities,
+        filter_name,
+        use_filter_sort_reverse,
+        use_filter_sort_alpha,
+        name_prop="archetype_name"
+    )
+
+    # After the initial name filtering, remove all entities that are filtered out
+    for i, entity in enumerate(entities):
+        if not entity.is_filtered():
+            if not filter_flags:
+                # Empty list is equivalent to all items visible
+                filter_flags = [_BITFLAG_FILTER_ITEM] * len(entities)
+
+            filter_flags[i] &= ~_BITFLAG_FILTER_ITEM
+
+
+    return filter_flags, filter_order
+
+
+class SOLLUMZ_UL_ENTITIES_LIST(MultiSelectUIListMixin, bpy.types.UIList):
     bl_idname = "SOLLUMZ_UL_ENTITIES_LIST"
     name_prop = "archetype_name"
-    order_by_name_key = "archetype_name"
-    item_icon = "OBJECT_DATA"
+    # order_by_name_key = "archetype_name"
+    default_item_icon = "OBJECT_DATA"
+    multiselect_operator = ytyp_ops.SOLLUMZ_OT_archetype_select_mlo_entity.bl_idname
 
-    def filter_item(self, item: MloEntityProperties):
-        scene = bpy.context.scene
-        filter_type = scene.sollumz_entity_filter_type
-
-        if filter_type == "all":
-            return True
-
-        if filter_type == "room":
-            return scene.sollumz_entity_filter_room == item.attached_room_id
-        elif filter_type == "portal":
-            return scene.sollumz_entity_filter_portal == item.attached_portal_id
-        elif filter_type == "entity_set":
-            in_entity_set = scene.sollumz_entity_filter_entity_set == item.attached_entity_set_id
-            in_room = scene.sollumz_entity_filter_entity_set_room == item.attached_room_id
-
-            if scene.sollumz_do_entity_filter_entity_set_room:
-                return in_entity_set and in_room
-
-            return in_entity_set
-
-        return True
+    def filter_items(self, context, data, propname):
+        multiselect_collection_name = propname[:-1]  # remove '_' suffix
+        collection: MultiSelectCollection = getattr(data, multiselect_collection_name)
+        return entities_filter_items(collection, self.filter_name, self.use_filter_sort_reverse, self.use_filter_sort_alpha)
 
 
-class SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL(TabPanel, bpy.types.Panel):
+class SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL(MloChildTabPanel, bpy.types.Panel):
     bl_label = "Entities"
     bl_idname = "SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_parent_id = SOLLUMZ_PT_MLO_PANEL.bl_idname
 
-    parent_tab_panel = SOLLUMZ_PT_MLO_PANEL
     icon = "OUTLINER"
 
     bl_order = 2
@@ -55,13 +69,19 @@ class SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL(TabPanel, bpy.types.Panel):
         return selected_archetype.type == ArchetypeType.MLO
 
     def draw(self, context):
+        # TODO(multiselect): think how we should manage disabling panels when multiple selection enabled
+        self.layout.enabled = not get_selected_ytyp(context).archetypes.has_multiple_selection
         layout = self.layout
         layout.use_property_split = False
         layout.use_property_decorate = False
         selected_archetype = get_selected_archetype(context)
 
-        list_col, _ = draw_list_with_add_remove(self.layout, "sollumz.createmloentity", "sollumz.deletemloentity",
-                                                SOLLUMZ_UL_ENTITIES_LIST.bl_idname, "", selected_archetype, "entities", selected_archetype, "entity_index")
+        list_col, _ = multiselect_ui_draw_list(
+            self.layout, selected_archetype.entities,
+            "sollumz.createmloentity", "sollumz.deletemloentity",
+            SOLLUMZ_UL_ENTITIES_LIST, SOLLUMZ_MT_entities_list_context_menu,
+            "tool_panel"
+        )
 
         filter_type = context.scene.sollumz_entity_filter_type
 
@@ -98,6 +118,17 @@ class SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL(TabPanel, bpy.types.Panel):
         layout.separator()
 
 
+class SOLLUMZ_MT_entities_list_context_menu(bpy.types.Menu):
+    bl_label = "Entities Specials"
+    bl_idname = "SOLLUMZ_MT_entities_list_context_menu"
+
+    def draw(self, _context):
+        layout = self.layout
+        op = layout.operator(ytyp_ops.SOLLUMZ_OT_archetype_select_all_mlo_entity.bl_idname, text="Select All")
+        if (filter_opts := SOLLUMZ_UL_ENTITIES_LIST.last_filter_options.get("entities_tool_panel", None)):
+            filter_opts.apply_to_operator(op)
+
+
 class SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL(TabbedPanelHelper, bpy.types.Panel):
     bl_label = "Entities"
     bl_idname = "SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL"
@@ -105,6 +136,7 @@ class SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL(TabbedPanelHelper, bpy.types.Panel):
     bl_region_type = "UI"
     bl_options = {"HIDE_HEADER"}
     bl_parent_id = SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL.bl_idname
+    bl_category = SOLLUMZ_PT_MLO_ENTITY_LIST_PANEL.bl_category
 
     default_tab = "SOLLUMZ_PT_MLO_ENTITY_PANEL"
 
@@ -114,69 +146,84 @@ class SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL(TabbedPanelHelper, bpy.types.Panel):
     def poll(cls, context):
         return get_selected_entity(context) is not None
 
+    def draw(self, context):
+        # TODO(multiselect): think how we should manage disabling panels when multiple selection enabled
+        self.layout.enabled = not get_selected_ytyp(context).archetypes.has_multiple_selection
+        super().draw(context)
 
-class SOLLUMZ_PT_MLO_ENTITY_PANEL(TabPanel, bpy.types.Panel):
-    bl_label = "Entity"
-    bl_idname = "SOLLUMZ_PT_MLO_ENTITY_PANEL"
+
+class MloEntityChildTabPanel(TabPanel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
+    bl_options = {"HIDE_HEADER"}
     bl_parent_id = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL.bl_idname
+    bl_category = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL.bl_category
 
     parent_tab_panel = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL
+
+
+class SOLLUMZ_PT_MLO_ENTITY_PANEL(MloEntityChildTabPanel, bpy.types.Panel):
+    bl_label = "Entity"
+    bl_idname = "SOLLUMZ_PT_MLO_ENTITY_PANEL"
+
     icon = "OBJECT_DATA"
 
     bl_order = 0
 
     def draw(self, context):
+        # TODO(multiselect): think how we should manage disabling panels when multiple selection enabled
+        self.layout.enabled = not get_selected_ytyp(context).archetypes.has_multiple_selection
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False
         selected_archetype = get_selected_archetype(context)
-        selected_entity = get_selected_entity(context)
+        has_multiple_selection = selected_archetype.entities.has_multiple_selection
+        selection = selected_archetype.entities.selection
+        active = selected_archetype.entities.active_item
 
-        layout.prop(selected_entity, "linked_object")
+        row = layout.row()
+        row.enabled = not has_multiple_selection
+        row.prop(active, "linked_object")
 
         layout.separator()
 
         row = layout.row(align=True)
-        row.prop(selected_entity, "attached_portal_id")
+        row.prop(selection, "attached_portal_id")
         row.operator("sollumz.search_entity_portals", text="", icon="VIEWZOOM")
 
         row = layout.row(align=True)
-        row.prop(selected_entity, "attached_room_id")
+        row.prop(selection, "attached_room_id")
         row.operator("sollumz.search_entity_rooms", text="", icon="VIEWZOOM")
 
         row = layout.row(align=True)
-        row.prop(selected_entity, "attached_entity_set_id")
+        row.prop(selection, "attached_entity_set_id")
         row.operator("sollumz.search_entityset", text="", icon="VIEWZOOM")
 
         layout.separator()
 
-        if not selected_entity.linked_object:
-            layout.prop(selected_entity, "position")
-            layout.prop(selected_entity, "rotation")
-            layout.prop(selected_entity, "scale_xy")
-            layout.prop(selected_entity, "scale_z")
+        if not active.linked_object:
+            col = layout.column()
+            col.enabled = not has_multiple_selection
+            col.prop(active, "position")
+            col.prop(active, "rotation")
+            col.prop(active, "scale_xy")
+            col.prop(active, "scale_z")
             layout.separator()
 
         for prop_name in EntityProperties.__annotations__:
             if prop_name == "flags":
                 continue
-            layout.prop(selected_entity, prop_name)
+            layout.prop(selection, prop_name)
 
 
-class SOLLUMZ_UL_ENTITY_EXTENSIONS_LIST(bpy.types.UIList, ExtensionsListHelper):
+class SOLLUMZ_UL_ENTITY_EXTENSIONS_LIST(ExtensionsListHelper, bpy.types.UIList):
     bl_idname = "SOLLUMZ_UL_ENTITY_EXTENSIONS_LIST"
 
 
-class SOLLUMZ_PT_ENTITY_EXTENSIONS_PANEL(TabPanel, ExtensionsPanelHelper, bpy.types.Panel):
+class SOLLUMZ_PT_ENTITY_EXTENSIONS_PANEL(MloEntityChildTabPanel, ExtensionsPanelHelper, bpy.types.Panel):
     bl_label = "Entity Extensions"
     bl_idname = "SOLLUMZ_PT_ENTITY_EXTENSIONS_PANEL"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_parent_id = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL.bl_idname
 
-    parent_tab_panel = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL
     icon = "CON_TRACKTO"
 
     bl_order = 1
@@ -190,19 +237,31 @@ class SOLLUMZ_PT_ENTITY_EXTENSIONS_PANEL(TabPanel, ExtensionsPanelHelper, bpy.ty
     def get_extensions_container(self, context):
         return get_selected_entity(context)
 
+    def draw(self, context):
+        # TODO(multiselect): think how we should manage disabling panels when multiple selection enabled
+        ytyp = get_selected_ytyp(context)
+        self.layout.enabled = not ytyp.archetypes.has_multiple_selection and not ytyp.archetypes.active_item.entities.has_multiple_selection
+        super().draw(context)
 
-class SOLLUMZ_PT_ENTITY_FLAGS_PANEL(TabPanel, FlagsPanel, bpy.types.Panel):
+
+class SOLLUMZ_PT_ENTITY_FLAGS_PANEL(MloEntityChildTabPanel, MultiSelectUIFlagsPanel, bpy.types.Panel):
     bl_idname = "SOLLUMZ_PT_ENTITY_FLAGS_PANEL"
     bl_label = "Entity Flags"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_parent_id = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL.bl_idname
 
-    parent_tab_panel = SOLLUMZ_PT_MLO_ENTITY_TAB_PANEL
     icon = "BOOKMARKS"
 
     bl_order = 2
 
-    def get_flags(self, context):
+    def get_flags_active(self, context):
         selected_entity = get_selected_entity(context)
         return selected_entity.flags
+
+    def get_flags_selection(self, context):
+        selected_archetype = get_selected_archetype(context)
+        return selected_archetype.entities.selection.flags
+
+    def draw(self, context):
+        # TODO(multiselect): think how we should manage disabling panels when multiple selection enabled
+        ytyp = get_selected_ytyp(context)
+        self.layout.enabled = not ytyp.archetypes.has_multiple_selection
+        super().draw(context)

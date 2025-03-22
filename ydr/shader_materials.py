@@ -5,10 +5,13 @@ from ..cwxml.shader import (
     ShaderManager,
     ShaderParameterType,
 )
-from ..sollumz_properties import MaterialType, SollumzGame
+from ..sollumz_properties import MaterialType, SollumzGame, MIN_VEHICLE_LIGHT_ID, MAX_VEHICLE_LIGHT_ID
 from ..tools.blenderhelper import find_bsdf_and_material_output
 from ..tools.animationhelper import add_global_anim_uv_nodes
-from ..tools.meshhelper import get_uv_map_name
+from ..tools.meshhelper import get_uv_map_name, get_color_attr_name
+from ..shared.shader_nodes import SzShaderNodeParameter, SzShaderNodeParameterDisplayType
+from ..shared.shader_expr import expr, compile_expr
+from .render_bucket import RenderBucket
 
 from .shader_materials_SHARED import *
 from .shader_materials_RDR import RDR_create_basic_shader_nodes, RDR_create_2lyr_shader, RDR_create_terrain_shader
@@ -25,17 +28,19 @@ shadermats = []
 for shader in ShaderManager._shaders.values():
     name = shader.filename.replace(".sps", "").upper()
 
-    shadermats.append(ShaderMaterial(
-        name, name.replace("_", " "), shader.filename))
-    
+    shadermats.append(ShaderMaterial(name, name.replace("_", " "), shader.filename))
+
+shadermats_by_filename = {s.value: s for s in shadermats}
+
 rdr_shadermats = []
 
 for shader in ShaderManager._rdr_shaders.values():
     name = shader.filename.replace(".sps", "").upper()
 
-    rdr_shadermats.append(ShaderMaterial(
-        name, name.replace("_", " "), shader.filename))
-    
+    rdr_shadermats.append(ShaderMaterial(name, name.replace("_", " "), shader.filename))
+
+rdr_shadermats_by_filename = {s.value: s for s in rdr_shadermats}
+
 
 def get_detail_extra_sampler(mat):  # move to blenderhelper.py?
     nodes = mat.node_tree.nodes
@@ -245,34 +250,23 @@ def create_water_nodes(b: ShaderBuilder):
     links = node_tree.links
     bsdf = b.bsdf
     output = b.material_output
-    mix_shader = node_tree.nodes.new("ShaderNodeMixShader")
-    add_shader = node_tree.nodes.new("ShaderNodeAddShader")
-    vol_absorb = node_tree.nodes.new("ShaderNodeVolumeAbsorption")
-    vol_absorb.inputs["Color"].default_value = (0.772, 0.91, 0.882, 1.0)
-    vol_absorb.inputs["Density"].default_value = 0.25
-    bsdf.inputs["Base Color"].default_value = (0.588, 0.91, 0.851, 1.0)
-    bsdf.inputs["Emission Color"].default_value = (0.49102, 0.938685, 1.0, 1.0)
-    bsdf.inputs["Emission Strength"].default_value = 0.1
-    glass_shader = node_tree.nodes.new("ShaderNodeBsdfGlass")
-    glass_shader.inputs["IOR"].default_value = 1.333
-    trans_shader = node_tree.nodes.new("ShaderNodeBsdfTransparent")
-    light_path = node_tree.nodes.new("ShaderNodeLightPath")
-    bump = node_tree.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.05
-    noise_tex = node_tree.nodes.new("ShaderNodeTexNoise")
-    noise_tex.inputs["Scale"].default_value = 12.0
-    noise_tex.inputs["Detail"].default_value = 3.0
-    noise_tex.inputs["Roughness"].default_value = 0.85
 
-    links.new(glass_shader.outputs[0], mix_shader.inputs[1])
-    links.new(trans_shader.outputs[0], mix_shader.inputs[2])
-    links.new(bsdf.outputs[0], add_shader.inputs[0])
-    links.new(vol_absorb.outputs[0], add_shader.inputs[1])
-    links.new(add_shader.outputs[0], output.inputs["Volume"])
-    links.new(mix_shader.outputs[0], output.inputs["Surface"])
-    links.new(light_path.outputs["Is Shadow Ray"], mix_shader.inputs["Fac"])
-    links.new(noise_tex.outputs["Fac"], bump.inputs["Height"])
-    links.new(bump.outputs["Normal"], glass_shader.inputs["Normal"])
+    bsdf.inputs["Base Color"].default_value = (0.316, 0.686, 0.801, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.0
+    bsdf.inputs["IOR"].default_value = 1.444
+    bsdf.inputs["Alpha"].default_value = 0.750
+    bsdf.inputs["Transmission Weight"].default_value = 0.750
+
+    nm = node_tree.nodes.new("ShaderNodeNormalMap")
+    nm.inputs["Strength"].default_value = 0.5
+    noise = node_tree.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 8.0
+    noise.inputs["Detail"].default_value = 2.0
+    noise.inputs["Roughness"].default_value = 2.0
+
+    links.new(noise.outputs["Color"], nm.inputs["Color"])
+    links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
 
 def create_tint_nodes(
     b: ShaderBuilder,
@@ -356,26 +350,30 @@ def create_basic_shader_nodes(b: ShaderBuilder):
     # shader nodes on the specific shaders that use it
     use_palette = diffpal is not None and filename in ShaderManager.palette_shaders
 
-    use_decal = True if filename in ShaderManager.tinted_shaders() else False
+    use_decal = shader.is_alpha or shader.is_decal or shader.is_cutout
     decalflag = 0
     blend_mode = "OPAQUE"
     if use_decal:
         # set blend mode
-        if filename in ShaderManager.cutout_shaders():
+        if shader.is_cutout:
             blend_mode = "CLIP"
         else:
             blend_mode = "BLEND"
             decalflag = 1
         # set flags
-        if filename in [ShaderManager.decals[20]]:  # decal_dirt.sps
-            # txt_alpha_mask = ?
+        if filename == "decal_dirt.sps":
             decalflag = 2
-        # decal_normal_only.sps / mirror_decal.sps / reflect_decal.sps
-        elif filename in [ShaderManager.decals[4], ShaderManager.decals[21], ShaderManager.decals[19]]:
+        elif filename in {"decal_normal_only.sps", "mirror_decal.sps", "reflect_decal.sps"}:
             decalflag = 3
-        # decal_spec_only.sps / spec_decal.sps
-        elif filename in [ShaderManager.decals[3], ShaderManager.decals[17]]:
+        elif filename in {"decal_spec_only.sps", "spec_decal.sps"}:
             decalflag = 4
+        elif filename in {"vehicle_badges.sps", "vehicle_decal.sps"}:
+            decalflag = 1  # badges and decals need to multiply the texture alpha by the Color 1 Alpha component
+        elif filename.startswith("vehicle_"):
+            # Don't treat any other alpha vehicle shaders as decals (e.g. lightsemissive or vehglass).
+            # Particularly problematic with lightsemissive as Color 1 Alpha component contains the light ID,
+            # which previously was being incorrectly used to multiply the texture alpha.
+            use_decal = False
 
     is_emissive = True if filename in ShaderManager.em_shaders else False
 
@@ -423,13 +421,14 @@ def create_basic_shader_nodes(b: ShaderBuilder):
     # link value parameters
     link_value_shader_parameters(b)
 
-    mat.blend_method = blend_mode
+    if bpy.app.version < (4, 2, 0):
+        mat.blend_method = blend_mode
+    else:
+        mat.surface_render_method = "BLENDED" if blend_mode != "OPAQUE" else "DITHERED"
 
 
 def create_terrain_shader(b: ShaderBuilder):
     shader = b.shader
-    filename = b.filename
-    mat = b.material
     node_tree = b.node_tree
     bsdf = b.bsdf
     links = node_tree.links
@@ -481,16 +480,16 @@ def create_terrain_shader(b: ShaderBuilder):
         mixns.append(mix)
 
     seprgb = node_tree.nodes.new("ShaderNodeSeparateRGB")
-    if filename in ShaderManager.mask_only_terrains:
+    if shader.is_terrain_mask_only:
         links.new(tm.outputs[0], seprgb.inputs[0])
     else:
         attr_c1 = node_tree.nodes.new("ShaderNodeAttribute")
-        attr_c1.attribute_name = "Color 2"
+        attr_c1.attribute_name = get_color_attr_name(1)
         links.new(attr_c1.outputs[0], mixns[0].inputs[1])
         links.new(attr_c1.outputs[0], mixns[0].inputs[2])
 
         attr_c0 = node_tree.nodes.new("ShaderNodeAttribute")
-        attr_c0.attribute_name = "Color 1"
+        attr_c0.attribute_name = get_color_attr_name(0)
         links.new(attr_c0.outputs[3], mixns[0].inputs[0])
         links.new(mixns[0].outputs[0], seprgb.inputs[0])
 
@@ -538,15 +537,40 @@ def create_terrain_shader(b: ShaderBuilder):
     link_value_shader_parameters(b)
 
 
-def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA):
+def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA, in_place_material: Optional[bpy.types.Material] = None) -> bpy.types.Material:
+    # from ..sollumz_preferences import get_addon_preferences
+    # preferences = get_addon_preferences(bpy.context)
+    # if preferences.experimental_shader_expressions:
+    #     from .shader_materials_v2 import create_shader
+    #     return create_shader(filename)
+
     shader = ShaderManager.find_shader(filename, game)
     if shader is None:
         raise AttributeError(f"Shader '{filename}' does not exist!")
 
     filename = shader.filename  # in case `filename` was hashed initially
     base_name = ShaderManager.find_shader_base_name(filename, game)
+    material_name = filename.replace(".sps", "")
 
-    mat = bpy.data.materials.new(filename.replace(".sps", ""))
+    if in_place_material and in_place_material.use_nodes:
+        # If creating the shader in an existing material, setup the node tree to its default state
+        current_node_tree = in_place_material.node_tree
+        current_node_tree.nodes.clear()
+        material_ouput = current_node_tree.nodes.new("ShaderNodeOutputMaterial")
+        bsdf = current_node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+        current_node_tree.links.new(bsdf.outputs["BSDF"], material_ouput.inputs["Surface"])
+
+        # If the material had a default name based on its current shader, replace it with the new shader name
+        import re
+        current_filename = in_place_material.shader_properties.filename
+        if (
+            in_place_material.sollum_type == MaterialType.SHADER and
+            current_filename and
+            re.match(rf"{current_filename.replace('.sps', '')}(\.\d\d\d)?", in_place_material.name)
+        ):
+            in_place_material.name = material_name
+
+    mat = in_place_material or bpy.data.materials.new(material_name)
     mat.sollum_type = MaterialType.SHADER
     mat.use_nodes = True
     mat.shader_properties.name = base_name
@@ -574,7 +598,7 @@ def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA):
 
     create_uv_map_nodes(builder)
 
-    if filename in ShaderManager.terrains:
+    if shader.is_terrain:
         create_terrain_shader(builder)
     elif filename in ShaderManager.rdr_standard_2lyr:
          RDR_create_2lyr_shader(builder)
@@ -585,13 +609,150 @@ def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA):
             create_basic_shader_nodes(builder)
         elif game == SollumzGame.RDR:
             RDR_create_basic_shader_nodes(builder)
-       
 
     if shader.is_uv_animation_supported:
         add_global_anim_uv_nodes(mat)
+
+    if game == SollumzGame.GTA and shader.filename.startswith("vehicle_"):
+        # Add additionals node to support vehicle render preview features
+        if shader.filename == "vehicle_lightsemissive.sps":
+            add_vehicle_lights_emissive_toggle_nodes(builder)
+
+        if "matDiffuseColor" in shader.parameter_map:
+            add_vehicle_body_color_nodes(builder)
+
+        if "DirtSampler" in shader.parameter_map:
+            add_vehicle_dirt_nodes(builder)
 
     link_uv_map_nodes_to_textures(builder)
 
     organize_node_tree(builder)
 
     return mat
+
+
+VEHICLE_PREVIEW_NODE_LIGHT_EMISSIVE_TOGGLE = [
+    f"PreviewLightID{light_id}Toggle" for light_id in range(MIN_VEHICLE_LIGHT_ID, MAX_VEHICLE_LIGHT_ID+1)
+]
+VEHICLE_PREVIEW_NODE_BODY_COLOR = [
+    f"PreviewBodyColor{paint_layer_id}" for paint_layer_id in range(8)
+]
+VEHICLE_PREVIEW_NODE_DIRT_LEVEL = "PreviewDirtLevel"
+VEHICLE_PREVIEW_NODE_DIRT_WETNESS = "PreviewDirtWetness"
+VEHICLE_PREVIEW_NODE_DIRT_COLOR = "PreviewDirtColor"
+
+
+def add_vehicle_lights_emissive_toggle_nodes(builder: ShaderBuilder):
+    em = try_get_node_by_cls(builder.node_tree, bpy.types.ShaderNodeEmission)
+    if not em:
+        return
+
+    shader_expr = vehicle_lights_emissive_toggles()
+    compiled_shader_expr = compile_expr(builder.material.node_tree, shader_expr)
+
+    builder.node_tree.links.new(compiled_shader_expr.output, em.inputs["Strength"])
+
+
+def vehicle_lights_emissive_toggles() -> expr.ShaderExpr:
+    from ..shared.shader_expr.builtins import (
+        color_attribute,
+        float_param,
+        value,
+    )
+
+    attr_c0 = color_attribute(get_color_attr_name(0))
+    emissive_mult = float_param("emissiveMultiplier")
+
+    eps = 0.001
+    final_flag = 0.0
+    for light_id in range(MIN_VEHICLE_LIGHT_ID, MAX_VEHICLE_LIGHT_ID+1):
+        light_id_normalized = light_id / 255
+        flag_toggle = value(VEHICLE_PREVIEW_NODE_LIGHT_EMISSIVE_TOGGLE[light_id], default_value=1.0)
+        flag_lower_bound = attr_c0.alpha > (light_id_normalized - eps)
+        flag_upper_bound = attr_c0.alpha < (light_id_normalized + eps)
+        flag = flag_toggle * flag_lower_bound * flag_upper_bound
+        final_flag += flag
+
+    final_mult = emissive_mult * final_flag
+    return final_mult
+
+
+def add_vehicle_dirt_nodes(builder: ShaderBuilder):
+    shader_expr = vehicle_dirt_overlay()
+    compiled_shader_expr = compile_expr(builder.material.node_tree, shader_expr)
+
+    orig_base_color = builder.bsdf.inputs["Base Color"].links[0].from_socket
+    builder.node_tree.links.new(orig_base_color, compiled_shader_expr.node.inputs["A"])
+    builder.node_tree.links.new(compiled_shader_expr.output, builder.bsdf.inputs["Base Color"])
+
+
+def vehicle_dirt_overlay() -> expr.ShaderExpr:
+    from ..shared.shader_expr.builtins import (
+        tex,
+        value,
+        vec,
+        vec_value,
+        mix_color,
+        map_range,
+    )
+
+    # Shader parameters 'dirtLevelMod' and 'dirtColor' are set at runtime. So ignore them and instead use our own values
+    dirt_color = vec_value(VEHICLE_PREVIEW_NODE_DIRT_COLOR, default_value=(70/255, 60/255, 50/255))
+    dirt_level = value(VEHICLE_PREVIEW_NODE_DIRT_LEVEL, default_value=0.0)
+    dirt_wetness = value(VEHICLE_PREVIEW_NODE_DIRT_WETNESS, default_value=0.0)
+
+    dirt_tex = tex("DirtSampler", None)  # will be linked to the correct UV map by `link_uv_map_nodes_to_textures`
+
+    dirt_level = dirt_level * map_range(
+        dirt_wetness,
+        0.0, 1.0,
+        dirt_tex.color.r, dirt_tex.color.g
+    )
+
+    dirt_mod = map_range(dirt_wetness, 0.0, 1.0, 1.0, 0.6)
+
+    dirt_color = dirt_color * dirt_mod
+
+    # this vec(0) will be replaced by the shader base color
+    final_color = mix_color(vec(0.0, 0.0, 0.0), dirt_color, dirt_level)
+
+    # TODO: increase alpha on vehglass
+
+    return final_color
+
+
+def add_vehicle_body_color_nodes(builder: ShaderBuilder):
+    shader_expr = vehicle_body_color()
+    compiled_shader_expr = compile_expr(builder.material.node_tree, shader_expr)
+
+    orig_base_color = builder.bsdf.inputs["Base Color"].links[0].from_socket
+    builder.node_tree.links.new(orig_base_color, compiled_shader_expr.node.inputs[0])
+    builder.node_tree.links.new(compiled_shader_expr.output, builder.bsdf.inputs["Base Color"])
+
+
+def vehicle_body_color() -> expr.ShaderExpr:
+    from ..shared.shader_expr.builtins import (
+        param,
+        vec,
+        vec_value,
+    )
+
+    mat_diffuse_color = param("matDiffuseColor").vec
+
+    final_paint_layer_color = vec(0.0, 0.0, 0.0)
+    eps = 0.0001
+    enable_paint_layer = (mat_diffuse_color.x > (2.0 - eps)) * (mat_diffuse_color.x < (2.0 + eps))
+    for paint_layer_id in range(1, 7+1):
+        default_color = (1.0, 1.0, 1.0)
+        if paint_layer_id == 5:
+            default_color = (0.5, 0.5, 0.5)
+        body_color = vec_value(VEHICLE_PREVIEW_NODE_BODY_COLOR[paint_layer_id], default_value=default_color)
+
+        use_this_paint_layer = (mat_diffuse_color.y > (paint_layer_id - eps)) * \
+            (mat_diffuse_color.y < (paint_layer_id + eps))
+
+        final_paint_layer_color += body_color * use_this_paint_layer
+
+    final_body_color = final_paint_layer_color * enable_paint_layer + mat_diffuse_color * (1.0 - enable_paint_layer)
+
+    return vec(1.0, 1.0, 1.0) * final_body_color  # this vec(1) will be replaced by the shader base color

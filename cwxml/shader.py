@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from ..cwxml.drawable_RDR import VERT_ATTR_DTYPES
 from ..sollumz_properties import SollumzGame
 from .element import (
+    ElementProperty,
     ElementTree,
     ListProperty,
     TextProperty,
@@ -12,7 +13,7 @@ from .element import (
 from .drawable import VertexLayoutList
 from ..tools import jenkhash
 from typing import Optional
-from enum import Enum
+from enum import Enum, Flag, auto
 
 
 current_game = SollumzGame.GTA
@@ -237,6 +238,37 @@ class SemanticsList(ElementTree):
         return new
 
 
+class ShaderDefFlag(Flag):
+    IS_CLOTH = auto()
+    IS_TERRAIN = auto()
+    IS_TERRAIN_MASK_ONLY = auto()
+
+class ShaderDefFlagProperty(ElementProperty):
+    value_types = (ShaderDefFlag)
+
+    def __init__(self, tag_name: str = "Flags", value: ShaderDefFlag = ShaderDefFlag(0)):
+        super().__init__(tag_name, value)
+
+    @staticmethod
+    def from_xml(element: ET.Element):
+        new = ShaderDefFlagProperty(element.tag)
+        if element.text:
+            text = element.text.split()
+            for flag in text:
+                if flag in ShaderDefFlag.__members__:
+                    new.value = new.value | ShaderDefFlag[flag]
+                else:
+                    ShaderDefFlagProperty.read_value_error(element)
+
+        return new
+
+    def to_xml(self):
+        element = ET.Element(self.tag_name)
+        if len(self.value) > 0:
+            element.text = " ".join(f.name for f in self.value)
+        return element
+
+
 class ShaderDef(ElementTree):
     tag_name = "Item"
 
@@ -250,19 +282,21 @@ class ShaderDef(ElementTree):
         super().__init__()
         if current_game == SollumzGame.RDR:
             self.filename = TextProperty("Name")
+            self.flags = ShaderDefFlagProperty()
             self.render_bucket = 0
             self.buffer_size = []
             self.parameters = ShaderParameterDefsList("Params")
             self.semantics = SemanticsList()
-            self.parameter_map = {}
         elif current_game == SollumzGame.GTA:
             self.filename = TextProperty("Name", "")
+            self.flags = ShaderDefFlagProperty()
             self.layouts = LayoutList()
             self.parameters = ShaderParameterDefsList("Parameters")
             self.render_bucket = 0
-            self.uv_maps = {}
-            self.parameter_map = {}
-            self.parameter_ui_order = {}
+
+        self.uv_maps = {}
+        self.parameter_map = {}
+        self.parameter_ui_order = {}
 
     @property
     def required_tangent(self):
@@ -313,6 +347,16 @@ class ShaderDef(ElementTree):
         return names
 
     @property
+    def used_texcoords_indices(self) -> set[int]:
+        indices = set()
+        for layout in self.layouts:
+            for field_name in layout.value:
+                if "TexCoord" in field_name:
+                    indices.add(int(field_name[8:]))
+
+        return indices
+
+    @property
     def used_colors(self) -> set[str]:
         names = set()
         for layout in self.layouts:
@@ -323,8 +367,42 @@ class ShaderDef(ElementTree):
         return names
 
     @property
+    def used_colors_indices(self) -> set[int]:
+        indices = set()
+        for layout in self.layouts:
+            for field_name in layout.value:
+                if "Colour" in field_name:
+                    indices.add(int(field_name[6:]))
+
+        return indices
+
+    @property
     def is_uv_animation_supported(self) -> bool:
         return "globalAnimUV0" in self.parameter_map and "globalAnimUV1" in self.parameter_map
+
+    @property
+    def is_cloth(self) -> bool:
+        return ShaderDefFlag.IS_CLOTH in self.flags
+
+    @property
+    def is_terrain(self) -> bool:
+        return ShaderDefFlag.IS_TERRAIN in self.flags
+
+    @property
+    def is_terrain_mask_only(self) -> bool:
+        return ShaderDefFlag.IS_TERRAIN_MASK_ONLY in self.flags
+
+    @property
+    def is_alpha(self) -> bool:
+        return self.render_bucket == 1
+
+    @property
+    def is_decal(self) -> bool:
+        return self.render_bucket == 2
+
+    @property
+    def is_cutout(self) -> bool:
+        return self.render_bucket == 3
 
     @classmethod
     def from_xml(cls, element: ET.Element) -> "ShaderDef":
@@ -364,39 +442,22 @@ class ShaderManager:
     rdr_standard_glasses = ["standard_glass_breakable", "standard_glass_fp", "standard_glass"]
     rdr_standard_decals = ["standard_decal_blend" , "standard_decal", "standard_decal_ground", "standard_decal_hbb","standard_decal_heightmap", 
               "standard_decal_normal_only" , "standard_decal_tnt"]
-    terrains = ["terrain_cb_w_4lyr.sps", "terrain_cb_w_4lyr_lod.sps", "terrain_cb_w_4lyr_spec.sps", "terrain_cb_w_4lyr_spec_pxm.sps", "terrain_cb_w_4lyr_pxm_spm.sps",
-                "terrain_cb_w_4lyr_pxm.sps", "terrain_cb_w_4lyr_cm_pxm.sps", "terrain_cb_w_4lyr_cm_tnt.sps", "terrain_cb_w_4lyr_cm_pxm_tnt.sps", "terrain_cb_w_4lyr_cm.sps",
-                "terrain_cb_w_4lyr_2tex.sps", "terrain_cb_w_4lyr_2tex_blend.sps", "terrain_cb_w_4lyr_2tex_blend_lod.sps", "terrain_cb_w_4lyr_2tex_blend_pxm.sps",
-                "terrain_cb_w_4lyr_2tex_blend_pxm_spm.sps", "terrain_cb_w_4lyr_2tex_pxm.sps", "terrain_cb_4lyr.sps", "terrain_cb_w_4lyr_spec_int_pxm.sps",
-                "terrain_cb_w_4lyr_spec_int.sps", "terrain_cb_4lyr_lod.sps"]
-    mask_only_terrains = ["terrain_cb_w_4lyr_cm.sps", "terrain_cb_w_4lyr_cm_tnt.sps",
-                          "terrain_cb_w_4lyr_cm_pxm_tnt.sps", "terrain_cb_w_4lyr_cm_pxm.sps"]
-    cutouts = ["cutout.sps", "cutout_um.sps", "cutout_tnt.sps", "cutout_fence.sps", "cutout_fence_normal.sps", "cutout_hard.sps", "cutout_spec_tnt.sps", "normal_cutout.sps",
-               "normal_cutout_tnt.sps", "normal_cutout_um.sps", "normal_spec_cutout.sps", "normal_spec_cutout_tnt.sps", "trees_lod.sps", "trees.sps", "trees_tnt.sps",
-               "trees_normal.sps", "trees_normal_spec.sps", "trees_normal_spec_tnt.sps", "trees_normal_diffspec.sps", "trees_normal_diffspec_tnt.sps"]
-    alphas = ["normal_spec_alpha.sps", "normal_spec_reflect_alpha.sps", "normal_spec_reflect_emissivenight_alpha.sps", "normal_spec_screendooralpha.sps", "normal_alpha.sps",
-              "normal_reflect_alpha.sps", "emissive_alpha.sps", "emissive_alpha_tnt.sps", "emissive_clip.sps", "emissive_additive_alpha.sps", "emissivenight_alpha.sps", "emissivestrong_alpha.sps",
-              "spec_alpha.sps", "spec_reflect_alpha.sps", "alpha.sps", "reflect_alpha.sps", "normal_screendooralpha.sps", "spec_screendooralpha.sps", "cloth_spec_alpha.sps",
-              "cloth_normal_spec_alpha.sps"]
-    glasses = ["glass.sps", "glass_pv.sps", "glass_pv_env.sps", "glass_env.sps", "glass_spec.sps", "glass_reflect.sps", "glass_emissive.sps", "glass_emissivenight.sps",
-               "glass_emissivenight_alpha.sps", "glass_breakable.sps", "glass_breakable_screendooralpha.sps", "glass_displacement.sps", "glass_normal_spec_reflect.sps",
-               "glass_emissive_alpha.sps"]
-    decals = ["decal.sps", "decal_tnt.sps", "decal_glue.sps", "decal_spec_only.sps", "decal_normal_only.sps", "decal_emissive_only.sps", "decal_emissivenight_only.sps",
-              "decal_amb_only.sps", "normal_decal.sps", "normal_decal_pxm.sps", "normal_decal_pxm_tnt.sps", "normal_decal_tnt.sps", "normal_spec_decal.sps", "normal_spec_decal_detail.sps",
-              "normal_spec_decal_nopuddle.sps", "normal_spec_decal_tnt.sps", "normal_spec_decal_pxm.sps", "spec_decal.sps", "spec_reflect_decal.sps", "reflect_decal.sps", "decal_dirt.sps",
-              "mirror_decal.sps", "grass_batch.sps"]
-    veh_cutouts = ["vehicle_cutout.sps", "vehicle_badges.sps"]
-    veh_glasses = ["vehicle_vehglass.sps", "vehicle_vehglass_inner.sps"]
-    veh_decals = ["vehicle_decal.sps", "vehicle_decal2.sps",
-                  "vehicle_blurredrotor_emissive.sps"]
-    shadow_proxies = ["trees_shadow_proxy.sps"]
     # Tint shaders that use colour1 instead of colour0 to index the tint palette
     tint_colour1_shaders = ["trees_normal_diffspec_tnt.sps", "trees_tnt.sps", "trees_normal_spec_tnt.sps"]
     palette_shaders = ["ped_palette.sps", "ped_default_palette.sps", "weapon_normal_spec_cutout_palette.sps",
                        "weapon_normal_spec_detail_palette.sps", "weapon_normal_spec_palette.sps"]
     em_shaders = ["normal_spec_emissive.sps", "normal_spec_reflect_emissivenight.sps", "emissive.sps", "emissive_speclum.sps", "emissive_tnt.sps", "emissivenight.sps",
                   "emissivenight_geomnightonly.sps", "emissivestrong_alpha.sps", "emissivestrong.sps", "glass_emissive.sps", "glass_emissivenight.sps", "glass_emissivenight_alpha.sps",
-                  "glass_emissive_alpha.sps", "decal_emissive_only.sps", "decal_emissivenight_only.sps"]
+                  "glass_emissive_alpha.sps", "decal_emissive_only.sps", "decal_emissivenight_only.sps",
+
+                  "vehicle_blurredrotor_emissive.sps",
+                  "vehicle_dash_emissive.sps", "vehicle_dash_emissive_opaque.sps",
+                  "vehicle_paint4_emissive.sps",
+                  "vehicle_emissive_alpha.sps", "vehicle_emissive_opaque.sps",
+                  "vehicle_tire_emissive.sps",
+                  "vehicle_track_emissive.sps", "vehicle_track2_emissive.sps", "vehicle_track_siren.sps",
+                  "vehicle_lightsemissive.sps", "vehicle_lightsemissive_siren.sps",
+                  ]
     water_shaders = ["water_fountain.sps",
                      "water_poolenv.sps", "water_decal.sps", "water_terrainfoam.sps", "water_riverlod.sps", "water_shallow.sps", "water_riverfoam.sps", "water_riverocean.sps", "water_rivershallow.sps"]
 
@@ -406,10 +467,7 @@ class ShaderManager:
                   "vehicle_paint9.sps",]
 
     def tinted_shaders():
-        return ShaderManager.cutouts + ShaderManager.alphas + ShaderManager.glasses + ShaderManager.decals + ShaderManager.veh_cutouts + ShaderManager.veh_glasses + ShaderManager.veh_decals + ShaderManager.shadow_proxies + ShaderManager.rdr_standard_decals + ShaderManager.rdr_standard_glasses + ShaderManager.rdr_standard_alphas
-
-    def cutout_shaders():
-        return ShaderManager.cutouts + ShaderManager.veh_cutouts + ShaderManager.shadow_proxies
+        return ShaderManager.rdr_standard_decals + ShaderManager.rdr_standard_glasses + ShaderManager.rdr_standard_alphas
 
     @staticmethod
     def load_shaders():

@@ -1,11 +1,15 @@
 import bpy
+from bpy.props import (
+    BoolProperty,
+)
 import os
 from typing import Optional
 from ..tools.blenderhelper import lod_level_enum_flag_prop_factory
 from ..sollumz_helper import find_sollumz_parent
 from ..cwxml.light_preset import LightPresetsFile
-from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumzGame, items_from_enums, TextureUsage, TextureFormat, LODLevel, SollumType, LightType, FlagPropertyGroup, TimeFlags
-from ..ydr.shader_materials import shadermats, rdr_shadermats
+from ..cwxml.shader_preset import ShaderPresetsFile
+from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumzGame, items_from_enums, LODLevel, SollumType, LightType, FlagPropertyGroup, TimeFlagsMixin
+from ..ydr.shader_materials import shadermats, shadermats_by_filename, rdr_shadermats, rdr_shadermats_by_filename
 from .render_bucket import RenderBucket, RenderBucketEnumItems
 from .light_flashiness import Flashiness, LightFlashinessEnumItems
 from bpy.app.handlers import persistent
@@ -20,22 +24,22 @@ class ShaderOrderItem(bpy.types.PropertyGroup):
 
 
 class DrawableShaderOrder(bpy.types.PropertyGroup):
-    items: bpy.props.CollectionProperty(type=ShaderOrderItem)
+    order_items: bpy.props.CollectionProperty(type=ShaderOrderItem)
     active_index: bpy.props.IntProperty(min=0)
 
     def get_active_shader_item_index(self) -> int:
-        return self.items[self.active_index].index
+        return self.order_items[self.active_index].index
 
     def swap_shaders(self, old: int, new: int) -> int:
         """Swaps two shaders. Shader at ``old`` index is placed at ``new`` index, and shader at ``new``
         is placed at ``old``.
         """
-        if new >= len(self.items):
+        if new >= len(self.order_items):
             return
 
         list_ind = self.active_index
 
-        for i, item in enumerate(self.items):
+        for i, item in enumerate(self.order_items):
             if item.index == new:
                 item.index = old
             elif item.index == old:
@@ -54,7 +58,7 @@ class DrawableShaderOrder(bpy.types.PropertyGroup):
         """Moves the shader at ``index`` to the top. All previous shaders are moved down."""
         list_ind = self.active_index
 
-        for i, item in enumerate(self.items):
+        for i, item in enumerate(self.order_items):
             if item.index < index:
                 # move previous shaders down
                 item.index += 1
@@ -69,13 +73,13 @@ class DrawableShaderOrder(bpy.types.PropertyGroup):
         """Moves the shader at ``index`` to the bottom. All subsequent shaders are moved up."""
         list_ind = self.active_index
 
-        for i, item in enumerate(self.items):
+        for i, item in enumerate(self.order_items):
             if item.index > index:
                 # move subsequent shaders up
                 item.index -= 1
             elif item.index == index:
                 # move our shader to the bottom
-                item.index = len(self.items) - 1
+                item.index = len(self.order_items) - 1
                 list_ind = i
 
         self.active_index = list_ind
@@ -90,6 +94,7 @@ class DrawableProperties(bpy.types.PropertyGroup):
         min=0, max=10000, default=9998, name="Lod Distance Low")
     lod_dist_vlow: bpy.props.FloatProperty(
         min=0, max=10000, default=9998, name="Lod Distance Vlow")
+
     unknown_24: bpy.props.IntProperty(min=0, default=0, name="Unknown 24")
     unknown_60: bpy.props.IntProperty(min=0, default=0, name="Unknown 60")
     parent_bone_tag: bpy.props.IntProperty(min=0, default=0, name="Parent BoneTag")
@@ -99,7 +104,6 @@ class DrawableProperties(bpy.types.PropertyGroup):
 
 class DrawableModelProperties(bpy.types.PropertyGroup):
     render_mask: bpy.props.IntProperty(name="Render Mask", default=255)
-    flags: bpy.props.IntProperty(name="Flags", default=0)
     sollum_lod: bpy.props.EnumProperty(
         items=items_from_enums(
             [LODLevel.HIGH, LODLevel.MEDIUM, LODLevel.LOW, LODLevel.VERYLOW]),
@@ -135,38 +139,14 @@ class ShaderProperties(bpy.types.PropertyGroup):
         name="Render Bucket", items=RenderBucketEnumItems,
         default=RenderBucket.OPAQUE.name
     )
-    filename: bpy.props.StringProperty(
-        name="Shader Filename", default="default.sps")
+    filename: bpy.props.StringProperty(name="Shader Filename", default="default.sps")
     name: bpy.props.StringProperty(name="Shader Name", default="default")
 
+    def get_ui_name(self) -> str:
+        s = shadermats_by_filename.get(self.filename, None)
+        return (s and s.ui_name) or ""
 
-class TextureFlags(bpy.types.PropertyGroup):
-    not_half: bpy.props.BoolProperty(name="NOT_HALF", default=False)
-    hd_split: bpy.props.BoolProperty(name="HD_SPLIT", default=False)
-    x2: bpy.props.BoolProperty(name="X2", default=False)
-    x4: bpy.props.BoolProperty(name="X4", default=False)
-    y4: bpy.props.BoolProperty(name="Y4", default=False)
-    x8: bpy.props.BoolProperty(name="X8", default=False)
-    x16: bpy.props.BoolProperty(name="X16", default=False)
-    x32: bpy.props.BoolProperty(name="X32", default=False)
-    x64: bpy.props.BoolProperty(name="X64", default=False)
-    y64: bpy.props.BoolProperty(name="Y64", default=False)
-    x128: bpy.props.BoolProperty(name="X128", default=False)
-    x256: bpy.props.BoolProperty(name="X256", default=False)
-    x512: bpy.props.BoolProperty(name="X512", default=False)
-    y512: bpy.props.BoolProperty(name="Y512", default=False)
-    x1024: bpy.props.BoolProperty(name="X1024", default=False)
-    y1024: bpy.props.BoolProperty(name="Y1024", default=False)
-    x2048: bpy.props.BoolProperty(name="X2048", default=False)
-    y2048: bpy.props.BoolProperty(name="Y2048", default=False)
-    embeddedscriptrt: bpy.props.BoolProperty(
-        name="EMBEDDEDSCRIPTRT", default=False)
-    unk19: bpy.props.BoolProperty(name="UNK19", default=False)
-    unk20: bpy.props.BoolProperty(name="UNK20", default=False)
-    unk21: bpy.props.BoolProperty(name="UNK21", default=False)
-    flag_full: bpy.props.BoolProperty(name="FLAG_FULL", default=False)
-    maps_half: bpy.props.BoolProperty(name="MAPS_HALF", default=False)
-    unk24: bpy.props.BoolProperty(name="UNK24", default=False)
+    ui_name: bpy.props.StringProperty(name="Shader", get=get_ui_name)
 
 
 def updateEmbeddedTextureProperty(self, context):
@@ -179,25 +159,12 @@ def updateEmbeddedTextureProperty(self, context):
 class TextureProperties(bpy.types.PropertyGroup):
     index: bpy.props.IntProperty(default=0)
     embedded: bpy.props.BoolProperty(name="Embedded", default=False, update=updateEmbeddedTextureProperty)
-    usage: bpy.props.EnumProperty(
-        items=items_from_enums(TextureUsage),
-        name="Usage",
-        default=TextureUsage.UNKNOWN
-    )
-
-    format: bpy.props.EnumProperty(
-        items=items_from_enums(TextureFormat),
-        name="Format",
-        default=TextureFormat.DXT1
-    )
-
-    extra_flags: bpy.props.IntProperty(name="Extra Flags", default=0)
-
     game_type: bpy.props.EnumProperty(
         items=items_from_enums(SollumzGame),
         name="Game Type",
         default=SollumzGame.GTA
     )
+    extra_flags: bpy.props.IntProperty(name="Extra Flags", default=0)
 
 
 class BoneFlag(bpy.types.PropertyGroup):
@@ -266,9 +233,25 @@ class BoneProperties(bpy.types.PropertyGroup):
 
 
 class ShaderMaterial(bpy.types.PropertyGroup):
-    index: bpy.props.IntProperty("Index")
-    name: bpy.props.StringProperty("Name")
+    def _get_favorite(self):
+        from ..sollumz_preferences import get_addon_preferences
+        preferences = get_addon_preferences(bpy.context)
+        return preferences.is_favorite_shader(self.name)
+
+    def _set_favorite(self, value):
+        from ..sollumz_preferences import get_addon_preferences
+        preferences = get_addon_preferences(bpy.context)
+        preferences.toggle_favorite_shader(self.name, value)
+
+    index: bpy.props.IntProperty(name="Index")
+    name: bpy.props.StringProperty(name="Name")
     game: bpy.props.StringProperty("Game")
+    search_name: bpy.props.StringProperty(name="Name")  # name without '_' or spaces used by list search filter
+    favorite: BoolProperty(
+        name="Favorite",
+        get=_get_favorite,
+        set=_set_favorite,
+    )
 
 
 class LightProperties(bpy.types.PropertyGroup):
@@ -286,7 +269,14 @@ class LightProperties(bpy.types.PropertyGroup):
         max=1.0,
         default=(1.0, 1.0, 1.0)
     )
-    light_hash: bpy.props.IntProperty(name="Light Hash")
+    light_hash: bpy.props.IntProperty(
+        name="Light ID",
+        description=(
+            "Identifier used to link the light in the base model with the correct light in a Light Effect entity "
+            "extension"
+        ),
+        min=0, max=255,
+    )
     volume_outer_intensity: bpy.props.FloatProperty(name="Volume Outer Intensity", default=1.0)
     corona_size: bpy.props.FloatProperty(name="Corona Size")
     volume_outer_exponent: bpy.props.FloatProperty(name="Volume Outer Exponent", default=1.0)
@@ -300,9 +290,13 @@ class LightProperties(bpy.types.PropertyGroup):
     projected_texture_hash: bpy.props.StringProperty(name="Projected Texture Hash")
 
 
-class LightPresetProp(bpy.types.PropertyGroup):
+class PresetEntry(bpy.types.PropertyGroup):
     index: bpy.props.IntProperty("Index")
     name: bpy.props.StringProperty("Name")
+
+
+class LightTimeFlags(TimeFlagsMixin, bpy.types.PropertyGroup):
+    pass
 
 
 class LightFlags(FlagPropertyGroup, bpy.types.PropertyGroup):
@@ -467,26 +461,6 @@ class LightFlags(FlagPropertyGroup, bpy.types.PropertyGroup):
         update=FlagPropertyGroup.update_flag)
 
 
-@persistent
-def on_file_loaded(_):
-    # Handler sets the default value of the ShaderMaterials collection on blend file load
-    sollum_game_type = bpy.context.scene.sollum_shader_game_type
-    materials = shadermats
-    game = "sollumz_gta5"
-    
-    bpy.context.scene.shader_materials.clear()
-    if sollum_game_type == SollumzGame.RDR:
-        materials = rdr_shadermats
-        game = "sollumz_rdr3"
-        
-    for index, mat in enumerate(materials):
-        item = bpy.context.scene.shader_materials.add()
-        item.index = index
-        item.name = mat.name
-        item.game = game
-   
-    load_light_presets()
-
 
 def get_light_type(self):
     if self.type == "POINT":
@@ -514,26 +488,59 @@ def get_light_presets_path() -> str:
     return os.path.join(get_config_directory_path(), "light_presets.xml")
 
 
-def get_defaut_light_presets_path() -> str:
-    package_name = __name__.split(".")[0]
-    return f"{bpy.utils.user_resource('SCRIPTS', path='addons')}\\{package_name}\\ydr\\light_presets.xml"
+def get_shader_presets_path() -> str:
+    from ..sollumz_preferences import get_config_directory_path
+    return os.path.join(get_config_directory_path(), "shader_presets.xml")
+
+
+_default_light_presets_path = os.path.join(os.path.dirname(__file__), "light_presets.xml")
+
+_default_shader_presets_path = os.path.join(os.path.dirname(__file__), "shader_presets.xml")
+
+
+def get_default_light_presets_path() -> str:
+    return _default_light_presets_path
+
+
+def get_default_shader_presets_path() -> str:
+    return _default_shader_presets_path
 
 
 light_presets = LightPresetsFile()
 
+shader_presets = ShaderPresetsFile()
+
 
 def load_light_presets():
-    bpy.context.scene.light_presets.clear()
+    bpy.context.window_manager.sz_light_presets.clear()
+
     path = get_light_presets_path()
     if not os.path.exists(path):
-        path = get_defaut_light_presets_path()
+        path = get_default_light_presets_path()
         if not os.path.exists(path):
             return
 
     file = LightPresetsFile.from_xml_file(path)
     light_presets.presets = file.presets
     for index, preset in enumerate(light_presets.presets):
-        item = bpy.context.scene.light_presets.add()
+        item = bpy.context.window_manager.sz_light_presets.add()
+        item.name = str(preset.name)
+        item.index = index
+
+
+def load_shader_presets():
+    bpy.context.window_manager.sz_shader_presets.clear()
+
+    path = get_shader_presets_path()
+    if not os.path.exists(path):
+        path = get_default_shader_presets_path()
+        if not os.path.exists(path):
+            return
+
+    file = ShaderPresetsFile.from_xml_file(path)
+    shader_presets.presets = file.presets
+    for index, preset in enumerate(shader_presets.presets):
+        item = bpy.context.window_manager.sz_shader_presets.add()
         item.name = str(preset.name)
         item.index = index
 
@@ -560,21 +567,35 @@ def get_model_properties(model_obj: bpy.types.Object, lod_level: LODLevel) -> Dr
     return lod_mesh.drawable_model_properties
 
 
-def updateShaderList(self, context):
-    sollum_game_type = context.scene.sollum_shader_game_type
+def update_shader_list():
+    # Initialize shader materials collection with an entry per shader
+    # We need the shader list as a collection property to be able to display it on the UI
+    sollum_game_type = bpy.context.scene.sollum_shader_game_type
     materials = shadermats
     game = "sollumz_gta5"
-    
-    context.scene.shader_materials.clear()
     if sollum_game_type == SollumzGame.RDR:
         materials = rdr_shadermats
         game = "sollumz_rdr3"
-        
+
+    bpy.context.window_manager.sz_shader_materials.clear()
     for index, mat in enumerate(materials):
-        item = context.scene.shader_materials.add()
+        item = bpy.context.window_manager.sz_shader_materials.add()
         item.index = index
         item.name = mat.name
         item.game = game
+        item.search_name = mat.ui_name.replace(" ", "").replace("_", "")
+
+
+def refresh_ui_collections():
+    update_shader_list()
+    load_light_presets()
+    load_shader_presets()
+
+
+@persistent
+def on_blend_file_loaded(_):
+    refresh_ui_collections()
+
 
 def register():
     bpy.types.Scene.sollum_shader_game_type = bpy.props.EnumProperty(
@@ -583,23 +604,21 @@ def register():
         description="Hidden property used to sync with global game selection",
         default=SollumzGame.GTA,
         options={"HIDDEN"},
-        update=updateShaderList
+        update=lambda s, c: update_shader_list(),
     )
-    bpy.types.Scene.shader_material_index = bpy.props.IntProperty(
-        name="Shader Material Index")  # MAKE ENUM WITH THE MATERIALS NAMES
-    bpy.types.Scene.shader_materials = bpy.props.CollectionProperty(
-        type=ShaderMaterial, name="Shader Materials")
-    bpy.app.handlers.load_post.append(on_file_loaded)
+    bpy.types.WindowManager.sz_shader_material_index = bpy.props.IntProperty(
+        name="Shader Material Index", min=0, max=len(shadermats) - 1)
+    bpy.types.WindowManager.sz_shader_materials = bpy.props.CollectionProperty(
+        type=ShaderMaterial, name="Shader Materials"
+    )
     bpy.types.Object.drawable_properties = bpy.props.PointerProperty(
         type=DrawableProperties)
     bpy.types.Material.shader_properties = bpy.props.PointerProperty(
         type=ShaderProperties)
     bpy.types.ShaderNodeTexImage.texture_properties = bpy.props.PointerProperty(
         type=TextureProperties)
-    bpy.types.ShaderNodeTexImage.texture_flags = bpy.props.PointerProperty(
-        type=TextureFlags)
     bpy.types.ShaderNodeTexImage.sollumz_texture_name = bpy.props.StringProperty(
-        name="Texture Name", description="Name of texture.", get=get_texture_name)
+        name="Texture Name", description="Name of texture", get=get_texture_name)
 
     # Store properties for the DrawableModel with HasSkin=1. This is so all skinned objects share
     # the same drawable model properties even when split by group. It seems there is only ever 1
@@ -646,7 +665,7 @@ def register():
         default=LightType.POINT,
         options={"HIDDEN"}
     )
-    bpy.types.Light.time_flags = bpy.props.PointerProperty(type=TimeFlags)
+    bpy.types.Light.time_flags = bpy.props.PointerProperty(type=LightTimeFlags)
     bpy.types.Light.light_flags = bpy.props.PointerProperty(type=LightFlags)
 
     bpy.types.Scene.sollumz_auto_lod_ref_mesh = bpy.props.PointerProperty(
@@ -655,8 +674,11 @@ def register():
     bpy.types.Scene.sollumz_auto_lod_decimate_step = bpy.props.FloatProperty(
         name="Decimate Step", min=0.0, max=0.99, default=0.6)
 
-    bpy.types.Scene.light_preset_index = bpy.props.IntProperty(name="Light Preset Index")
-    bpy.types.Scene.light_presets = bpy.props.CollectionProperty(type=LightPresetProp, name="Light Presets")
+    bpy.types.WindowManager.sz_light_preset_index = bpy.props.IntProperty(name="Light Preset Index")
+    bpy.types.WindowManager.sz_light_presets = bpy.props.CollectionProperty(type=PresetEntry, name="Light Presets")
+
+    bpy.types.WindowManager.sz_shader_preset_index = bpy.props.IntProperty(name="Shader Preset Index")
+    bpy.types.WindowManager.sz_shader_presets = bpy.props.CollectionProperty(type=PresetEntry, name="Shader Presets")
 
     bpy.types.Scene.sollumz_extract_lods_levels = lod_level_enum_flag_prop_factory()
     bpy.types.Scene.sollumz_extract_lods_parent_type = bpy.props.EnumProperty(name="Parent Type", items=(
@@ -665,26 +687,73 @@ def register():
          "Collection", "Parent to a Collection")
     ), default=0)
 
+    from .cable import CableAttr
+    bpy.types.Scene.sz_ui_cable_radius_visualize = bpy.props.BoolProperty(
+        name="Show Radius", description="Display the cable radius values on the 3D Viewport",
+        default=False
+    )
+    bpy.types.Scene.sz_ui_cable_radius = bpy.props.FloatProperty(
+        name=CableAttr.RADIUS.label, description=CableAttr.RADIUS.description,
+        min=0.0001, default=CableAttr.RADIUS.default_value,
+        subtype="DISTANCE"
+    )
+    bpy.types.Scene.sz_ui_cable_diffuse_factor_visualize = bpy.props.BoolProperty(
+        name="Show Diffuse Factor", description="Display the cable diffuse factor values on the 3D Viewport",
+        default=False
+    )
+    bpy.types.Scene.sz_ui_cable_diffuse_factor = bpy.props.FloatProperty(
+        name=CableAttr.DIFFUSE_FACTOR.label, description=CableAttr.DIFFUSE_FACTOR.description,
+        min=0.0, max=1.0, default=CableAttr.DIFFUSE_FACTOR.default_value,
+        subtype="FACTOR"
+    )
+    bpy.types.Scene.sz_ui_cable_um_scale_visualize = bpy.props.BoolProperty(
+        name="Show Micromovements Scale", description="Display the cable micromovements scale values on the 3D Viewport",
+        default=False
+    )
+    bpy.types.Scene.sz_ui_cable_um_scale = bpy.props.FloatProperty(
+        name=CableAttr.UM_SCALE.label, description=CableAttr.UM_SCALE.description,
+        min=0.0, default=CableAttr.UM_SCALE.default_value
+    )
+    bpy.types.Scene.sz_ui_cable_phase_offset_visualize = bpy.props.BoolProperty(
+        name="Show Phase Offset", description="Display the cable phase offset values on the 3D Viewport",
+        default=False
+    )
+    bpy.types.Scene.sz_ui_cable_phase_offset = bpy.props.FloatVectorProperty(
+        name=CableAttr.PHASE_OFFSET.label, description=CableAttr.PHASE_OFFSET.description,
+        size=2, min=0.0, max=1.0, default=CableAttr.PHASE_OFFSET.default_value[0:2]
+    )
+    bpy.types.Scene.sz_ui_cable_material_index_visualize = bpy.props.BoolProperty(
+        name="Show Material Index", description="Display the cable material indices on the 3D Viewport",
+        default=False
+    )
+    bpy.types.Scene.sz_ui_cable_material_index = bpy.props.IntProperty(
+        name=CableAttr.MATERIAL_INDEX.label, description=CableAttr.MATERIAL_INDEX.description,
+        min=0, default=CableAttr.MATERIAL_INDEX.default_value,
+    )
+
+    bpy.app.handlers.load_post.append(on_blend_file_loaded)
+
 
 def unregister():
     del bpy.types.Scene.sollum_shader_game_type
     del bpy.types.ShaderNodeTexImage.sollumz_texture_name
-    del bpy.types.Scene.shader_material_index
-    del bpy.types.Scene.shader_materials
+    del bpy.types.WindowManager.sz_shader_material_index
+    del bpy.types.WindowManager.sz_shader_materials
     del bpy.types.Object.drawable_properties
     del bpy.types.Mesh.drawable_model_properties
     del bpy.types.Object.skinned_model_properties
     del bpy.types.Material.shader_properties
     del bpy.types.ShaderNodeTexImage.texture_properties
-    del bpy.types.ShaderNodeTexImage.texture_flags
     del bpy.types.Bone.bone_properties
     del bpy.types.Light.light_properties
     del bpy.types.Scene.create_light_type
     del bpy.types.Light.time_flags
     del bpy.types.Light.light_flags
     del bpy.types.Light.is_capsule
-    del bpy.types.Scene.light_presets
-    del bpy.types.Scene.light_preset_index
+    del bpy.types.WindowManager.sz_light_presets
+    del bpy.types.WindowManager.sz_light_preset_index
+    del bpy.types.WindowManager.sz_shader_presets
+    del bpy.types.WindowManager.sz_shader_preset_index
     del bpy.types.Scene.create_seperate_drawables
     del bpy.types.Scene.auto_create_embedded_col
     del bpy.types.Scene.center_drawable_to_selection
@@ -693,5 +762,15 @@ def unregister():
     del bpy.types.Scene.sollumz_auto_lod_decimate_step
     del bpy.types.Scene.sollumz_extract_lods_levels
     del bpy.types.Scene.sollumz_extract_lods_parent_type
+    del bpy.types.Scene.sz_ui_cable_radius_visualize
+    del bpy.types.Scene.sz_ui_cable_radius
+    del bpy.types.Scene.sz_ui_cable_diffuse_factor_visualize
+    del bpy.types.Scene.sz_ui_cable_diffuse_factor
+    del bpy.types.Scene.sz_ui_cable_um_scale_visualize
+    del bpy.types.Scene.sz_ui_cable_um_scale
+    del bpy.types.Scene.sz_ui_cable_phase_offset_visualize
+    del bpy.types.Scene.sz_ui_cable_phase_offset
+    del bpy.types.Scene.sz_ui_cable_material_index_visualize
+    del bpy.types.Scene.sz_ui_cable_material_index
 
-    bpy.app.handlers.load_post.remove(on_file_loaded)
+    bpy.app.handlers.load_post.remove(on_blend_file_loaded)
