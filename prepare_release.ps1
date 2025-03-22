@@ -56,7 +56,7 @@ else
 
 # Add the commit placeholder and dev extension ID back to differentiate development commits from the release
 (Get-Content -Raw blender_manifest.toml) `
-  -replace "`nversion = .*", "`nversion = `"$major.$minor.$patch-rdr_dev+`$Format:%h`$`"" `
+  -replace "`nversion = .*", "`nversion = `"$major.$minor.$patch-rdrdev+`$Format:%h`$`"" `
   -replace "`nid = .*",      "`nid = `"sollumz_rdr_dev`"" `
   -replace "`nname = .*",    "`nname = `"Sollumz RDR (Development)`"" |
 Set-Content -NoNewline blender_manifest.toml
