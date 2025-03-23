@@ -182,7 +182,7 @@ class SOLLUMZ_OT_create_bound(bpy.types.Operator):
         else:
             bound_obj.sollum_game_type = sollum_game_type
 
-        apply_flag_preset(bound_obj, context.window_manager.sz_flag_preset_index)
+        apply_flag_preset(bound_obj, bound_obj.sollum_game_type, context.window_manager.sz_flag_preset_index)
 
         return {"FINISHED"}
 
