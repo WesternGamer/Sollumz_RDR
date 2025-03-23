@@ -16,8 +16,6 @@ from typing import Optional
 from enum import Enum, Flag, auto
 
 
-current_game = SollumzGame.GTA
-
 class FileNameList(ListProperty):
     class FileName(TextProperty):
         tag_name = "Item"
@@ -65,10 +63,9 @@ class ShaderParameterDef(ElementTree, ABC):
         self.name = AttributeProperty("name")
         self.type = AttributeProperty("type", self.type)
         self.hidden = AttributeProperty("hidden", False)
-        if current_game == SollumzGame.GTA:
-            self.subtype = AttributeProperty("subtype")
-        elif current_game == SollumzGame.RDR:
-            self.index = AttributeProperty("index")
+        self.subtype = AttributeProperty("subtype")
+
+        self.index = AttributeProperty("index")  # RDR
 
 
 class ShaderParameterTextureDef(ShaderParameterDef):
@@ -77,8 +74,8 @@ class ShaderParameterTextureDef(ShaderParameterDef):
     def __init__(self):
         super().__init__()
         self.uv = AttributeProperty("uv")
-        if current_game == SollumzGame.RDR:
-            self.index = AttributeProperty("index", 0)
+
+        self.index = AttributeProperty("index", 0)  # RDR
 
 
 class ShaderParameterFloatVectorDef(ShaderParameterDef, ABC):
@@ -272,22 +269,24 @@ class ShaderDefFlagProperty(ElementProperty):
 class ShaderDef(ElementTree):
     tag_name = "Item"
 
+    game: SollumzGame
     render_bucket: int
     buffer_size: []
     uv_maps: dict[str, int]
     parameter_map: dict[str, ShaderParameterDef]
     parameter_ui_order: dict[str, int]
 
-    def __init__(self):
+    def __init__(self, game: SollumzGame):
         super().__init__()
-        if current_game == SollumzGame.RDR:
+        self.game = game
+        if self.game == SollumzGame.RDR:
             self.filename = TextProperty("Name")
             self.flags = ShaderDefFlagProperty()
             self.render_bucket = 0
             self.buffer_size = []
             self.parameters = ShaderParameterDefsList("Params")
             self.semantics = SemanticsList()
-        elif current_game == SollumzGame.GTA:
+        elif self.game == SollumzGame.GTA:
             self.filename = TextProperty("Name", "")
             self.flags = ShaderDefFlagProperty()
             self.layouts = LayoutList()
@@ -300,12 +299,12 @@ class ShaderDef(ElementTree):
 
     @property
     def required_tangent(self):
-        if current_game == SollumzGame.GTA:
+        if self.game == SollumzGame.GTA:
             for layout in self.layouts:
                 if "Tangent" in layout.value:
                     return True
             return False
-        elif current_game == SollumzGame.RDR:
+        elif self.game == SollumzGame.RDR:
             tangents = set()
             for semantic in self.semantics.values:
                 current_semantic = None
@@ -338,12 +337,12 @@ class ShaderDef(ElementTree):
     @property
     def used_texcoords(self) -> set[str]:
         names = set()
-        if current_game == SollumzGame.GTA:
+        if self.game == SollumzGame.GTA:
             for layout in self.layouts:
                 for field_name in layout.value:
                     if "TexCoord" in field_name:
                         names.add(field_name)
-        elif current_game == SollumzGame.RDR:
+        elif self.game == SollumzGame.RDR:
             num_texcoords = max(semantic.count("T") for semantic in self.semantics.values)
             for i in range(num_texcoords):
                 names.add(f"TexCoord{i}")
@@ -353,12 +352,12 @@ class ShaderDef(ElementTree):
     @property
     def used_texcoords_indices(self) -> set[int]:
         indices = set()
-        if current_game == SollumzGame.GTA:
+        if self.game == SollumzGame.GTA:
             for layout in self.layouts:
                 for field_name in layout.value:
                     if "TexCoord" in field_name:
                         indices.add(int(field_name[8:]))
-        elif current_game == SollumzGame.RDR:
+        elif self.game == SollumzGame.RDR:
             num_texcoords = max(semantic.count("T") for semantic in self.semantics.values)
             for i in range(num_texcoords):
                 indices.add(i)
@@ -368,12 +367,12 @@ class ShaderDef(ElementTree):
     @property
     def used_colors(self) -> set[str]:
         names = set()
-        if current_game == SollumzGame.GTA:
+        if self.game == SollumzGame.GTA:
             for layout in self.layouts:
                 for field_name in layout.value:
                     if "Colour" in field_name:
                         names.add(field_name)
-        elif current_game == SollumzGame.RDR:
+        elif self.game == SollumzGame.RDR:
             num_colors = max(semantic.count("C") for semantic in self.semantics.values)
             for i in range(num_colors):
                 names.add(f"Colour{i}")
@@ -383,12 +382,12 @@ class ShaderDef(ElementTree):
     @property
     def used_colors_indices(self) -> set[int]:
         indices = set()
-        if current_game == SollumzGame.GTA:
+        if self.game == SollumzGame.GTA:
             for layout in self.layouts:
                 for field_name in layout.value:
                     if "Colour" in field_name:
                         indices.add(int(field_name[6:]))
-        elif current_game == SollumzGame.RDR:
+        elif self.game == SollumzGame.RDR:
             num_colors = max(semantic.count("C") for semantic in self.semantics.values)
             for i in range(num_colors):
                 indices.add(i)
@@ -424,8 +423,8 @@ class ShaderDef(ElementTree):
         return self.render_bucket == 3
 
     @classmethod
-    def from_xml(cls, element: ET.Element) -> "ShaderDef":
-        new: ShaderDef = super().from_xml(element)
+    def from_xml(cls, element: ET.Element, game: SollumzGame) -> "ShaderDef":
+        new: ShaderDef = super().from_xml(element, game)
         new.uv_maps = {
             p.name: p.uv for p in new.parameters if p.type == ShaderParameterType.TEXTURE and p.uv is not None
         }
@@ -490,11 +489,9 @@ class ShaderManager:
 
     @staticmethod
     def load_shaders():
-        global current_game
         tree = ET.parse(ShaderManager.shaderxml)
         rdrtree = ET.parse(ShaderManager.rdr_shaderxml)
 
-        current_game = SollumzGame.GTA
         for node in tree.getroot():
             base_name = node.find("Name").text
             for filename_elem in node.findall("./FileName//*"):
@@ -506,14 +503,13 @@ class ShaderManager:
                 filename_hash = jenkhash.Generate(filename)
                 render_bucket = int(filename_elem.attrib["bucket"])
 
-                shader = ShaderDef.from_xml(node)
+                shader = ShaderDef.from_xml(node, SollumzGame.GTA)
                 shader.filename = filename
                 shader.render_bucket = render_bucket
                 ShaderManager._shaders[filename] = shader
                 ShaderManager._shaders_by_hash[filename_hash] = shader
                 ShaderManager._shaders_base_names[shader] = base_name
-        
-        current_game = SollumzGame.RDR
+
         for node in rdrtree.getroot():
             base_name = node.find("Name").text
 
@@ -528,7 +524,7 @@ class ShaderManager:
             if buffer_size != None:
                 buffer_size = [int(x) for x in node.find("BufferSizes").text.split(" ")]
 
-            shader = ShaderDef.from_xml(node)
+            shader = ShaderDef.from_xml(node, SollumzGame.RDR)
             shader.filename = base_name
             shader.render_bucket = render_bucket
             shader.buffer_size = buffer_size

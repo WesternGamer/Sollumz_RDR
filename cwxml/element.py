@@ -104,9 +104,9 @@ class ElementTree(Element):
     """XML element that contains children defined by it's properties"""
 
     @classmethod
-    def from_xml(cls: Element, element: ET.Element):
+    def from_xml(cls: Element, element: ET.Element, *args):
         """Convert ET.Element object to ElementTree"""
-        new = cls()
+        new = cls(*args)
         if new.tag_name != element.tag:
             new.tag_name = element.tag
 
