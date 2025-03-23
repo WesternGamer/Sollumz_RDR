@@ -1,6 +1,6 @@
 import io
 import os
-from ..sollumz_properties import SollumzGame
+from ..sollumz_properties import SollumzGame, import_export_current_game as current_game, set_import_export_current_game
 from mathutils import Matrix
 import numpy as np
 from numpy.typing import NDArray
@@ -44,7 +44,6 @@ from .bound import (
 from collections.abc import MutableSequence
 from .drawable_RDR import BoneMappingProperty, VertexLayout, VerticesProperty, IndicesProperty
 
-current_game = SollumzGame.GTA
 
 class YDD:
 
@@ -52,14 +51,13 @@ class YDD:
 
     @staticmethod
     def from_xml_file(filepath):
-        global current_game
         tree = ET.parse(filepath)
         gameTag = tree.getroot().tag
         if "RDR2" in gameTag:
-            current_game = SollumzGame.RDR
+            set_import_export_current_game(SollumzGame.RDR)
             return RDR2DrawableDictionary.from_xml_file(filepath)
         else:
-            current_game = SollumzGame.GTA
+            set_import_export_current_game(SollumzGame.GTA)
             return DrawableDictionary.from_xml_file(filepath)
         
 
@@ -74,13 +72,12 @@ class YDR:
 
     @staticmethod
     def from_xml_file(filepath):
-        global current_game
         tree = ET.parse(filepath)
         gameTag = tree.getroot().tag
         if "RDR2" in gameTag:
-            current_game = SollumzGame.RDR
+            set_import_export_current_game(SollumzGame.RDR)
         else:
-            current_game = SollumzGame.GTA
+            set_import_export_current_game(SollumzGame.GTA)
         return Drawable(gameTag).from_xml_file(filepath)
 
     @staticmethod
@@ -94,7 +91,7 @@ class Texture(ElementTree):
     def __init__(self):
         super().__init__()
         self.name = TextProperty("Name", "")
-        if current_game == SollumzGame.GTA:        
+        if current_game() == SollumzGame.GTA:        
             self.unk32 = ValueProperty("Unk32", 0)
             self.usage = TextProperty("Usage")
             self.usage_flags = FlagsProperty("UsageFlags")
@@ -104,7 +101,7 @@ class Texture(ElementTree):
             self.miplevels = ValueProperty("MipLevels", 0)
             self.format = TextProperty("Format")
             self.filename = TextProperty("FileName", "")
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.flags = ValueProperty("Flags", 0)
 
 
@@ -173,9 +170,10 @@ class TextureShaderParameter(ShaderParameter):
     def __init__(self):
         super().__init__()
 
-        if current_game == SollumzGame.GTA:
+        print(f"TextureShaderParameter  {current_game()=}")
+        if current_game() == SollumzGame.GTA:
             self.texture_name = TextProperty("Name")
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.texture_name = AttributeProperty("texture", "")
             self.index = AttributeProperty("index", 0)
             self.flags = AttributeProperty("flags", 0)
@@ -397,11 +395,11 @@ class Shader(ElementTree):
     def __init__(self):
         super().__init__()
         self.name = TextProperty("Name", "")
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.filename = TextProperty("FileName", "")
             self.render_bucket = ValueProperty("RenderBucket", 0)
             self.parameters = ParametersList()
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.draw_bucket = ValueProperty("DrawBucket", 0)
             self.draw_bucket_flag = ValueProperty("DrawBucketFlag", False)
             self.parameters = RDRParameters()
@@ -427,9 +425,9 @@ class ShaderGroup(ElementTree):
 
     def __init__(self):
         super().__init__()
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.texture_dictionary = TextureDictionaryList()
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.texture_dictionary = RDRTextureDictionaryList()
         self.shaders = ShadersList()
 
@@ -474,10 +472,10 @@ class Bone(ElementTree):
         self.parent_index = ValueProperty("ParentIndex", -1)
         self.transform_unk = QuaternionProperty("TransformUnk")
         
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.sibling_index = ValueProperty("SiblingIndex", -1)
             self.translation = VectorProperty("Translation")
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.sibling_index = ValueProperty("NextSiblingIndex", -1)
             self.last_sibling_index = ValueProperty("LastSiblingIndex", -1)
             self.translation = VectorProperty("Position")
@@ -510,12 +508,12 @@ class Skeleton(ElementTree):
         # from: NcProductions and ArthurLopes
         # to my knowledge, having two addon peds with the same unknown 1C, 50, 54 and 58 value will cause one of them to be messed up when spawned together. for example, first add-on will spawn without problem, the second will have the bones messed up.
         # fixing this issue is simple by changing the value like you mentioned.
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.unknown_1c = ValueProperty("Unknown1C", 16777216)
             self.unknown_50 = ValueProperty("Unknown50", 567032952)
             self.unknown_54 = ValueProperty("Unknown54", 2134582703)
             self.unknown_58 = ValueProperty("Unknown58", 2503907467)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.unknown_24 = ValueProperty("Unknown_24", 16777216)
             self.unknown_50 = TextProperty("Unknown_50", "VRJTjUA_0xFD1B4CE2")
             self.unknown_54 = TextProperty("Unknown_54", "JcfuiBB_0x89E74EEE")
@@ -826,12 +824,12 @@ class Geometry(ElementTree):
         self.bounding_box_min = VectorProperty("BoundingBoxMin")
         self.bounding_box_max = VectorProperty("BoundingBoxMax")
 
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.shader_index = ValueProperty("ShaderIndex", 0)
             self.bone_ids = BoneIDProperty()
             self.vertex_buffer = VertexBuffer()
             self.index_buffer = IndexBuffer()
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.shader_index = ValueProperty("ShaderID", 0)
             self.colour_semantic = ValueProperty("ColourSemantic", 0)
             self.bone_index = ValueProperty("BoneIndex", -1)
@@ -854,10 +852,10 @@ class DrawableModel(ElementTree):
         self.flags = ValueProperty("Flags", 0)
         self.has_skin = ValueProperty("HasSkin", 0)
         self.bone_index = ValueProperty("BoneIndex", 0)
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.render_mask = ValueProperty("RenderMask", 0)
             self.matrix_count = ValueProperty("Unknown1", 0)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.bone_count = ValueProperty("BonesCount", 0)
             self.bone_mapping = BoneMappingProperty("BoneMapping")
             self.bounding_box_min = VectorProperty("BoundingBoxMin")
@@ -902,14 +900,14 @@ class Drawable(ElementTree, AbstractClass):
     def __init__(self, tag_name: str = "Drawable"):
         super().__init__()
         self.tag_name = tag_name
-        self.game = current_game
+        self.game = current_game()
 
         # Only in fragment drawables
         self.frag_bound_matrix = MatrixProperty("Matrix")
         self.frag_extra_bound_matrices = DrawableMatrices("Matrices")
 
         self.name = TextProperty("Name", "")
-        if current_game == SollumzGame.RDR:
+        if current_game() == SollumzGame.RDR:
             self.hash = TextProperty("Hash", "")
         self.bounding_sphere_center = VectorProperty("BoundingSphereCenter")
         self.bounding_sphere_radius = ValueProperty("BoundingSphereRadius")
@@ -926,7 +924,7 @@ class Drawable(ElementTree, AbstractClass):
         self.shader_group = ShaderGroup()
         self.skeleton = Skeleton()
 
-        if current_game == SollumzGame.GTA: 
+        if current_game() == SollumzGame.GTA: 
             self.joints = Joints()
             self.drawable_models_high = DrawableModelList(
                 "DrawableModelsHigh")
@@ -937,7 +935,7 @@ class Drawable(ElementTree, AbstractClass):
             self.drawable_models_vlow = DrawableModelList(
                 "DrawableModelsVeryLow")
             self.lights = Lights()
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.version = AttributeProperty("version", 1)
             self.extra_skeletons = ExtraSkeletonsList()
             self.drawable_models_high = LodList("LodHigh")
@@ -953,7 +951,7 @@ class Drawable(ElementTree, AbstractClass):
     @classmethod
     def from_xml(cls, element: ET.Element):
         new = super().from_xml(element)
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             bounds_elem = element.find("Bounds")
             if bounds_elem is not None:
                 bound_type = bounds_elem.get("type")
@@ -981,7 +979,7 @@ class Drawable(ElementTree, AbstractClass):
                     bound.tag_name = "Bounds"
                     new.bounds = bound
 
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             bounds_elem = element.find("Bounds")
             if bounds_elem is not None:
                 bound_type = bounds_elem.get("type")
@@ -1018,7 +1016,7 @@ class RDR2DrawableDictionary(ElementTree, AbstractClass):
 
     def __init__(self) -> None:
         super().__init__()
-        self.game = current_game
+        self.game = current_game()
         self.version = AttributeProperty("version", 1)
         self.drawables = []
 
@@ -1056,7 +1054,7 @@ class DrawableDictionary(MutableSequence, Element):
 
     def __init__(self, value=None):
         super().__init__()
-        self.game = current_game
+        self.game = current_game()
         self._value = value or []
 
     def __getitem__(self, name):

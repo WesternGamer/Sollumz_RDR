@@ -2,14 +2,12 @@ import bpy
 from typing import Union
 from mathutils import Vector, Quaternion
 from ..cwxml import ytyp as ytypxml, ymap as ymapxml
-from ..sollumz_properties import ArchetypeType, AssetType, EntityLodLevel, EntityPriorityLevel, SollumzGame, MapEntityType
+from ..sollumz_properties import ArchetypeType, AssetType, EntityLodLevel, EntityPriorityLevel, SollumzGame, MapEntityType, import_export_current_game as current_game, set_import_export_current_game
 from ..sollumz_preferences import get_import_settings
 from ..sollumz_helper import duplicate_object_with_children
 from .properties.ytyp import CMapTypesProperties, ArchetypeProperties, SpecialAttribute, TimecycleModifierProperties, RoomProperties, PortalProperties, MloEntityProperties, EntitySetProperties
 from .properties.extensions import ExtensionProperties, ExtensionType, ExtensionsContainer
 from ..ydr.light_flashiness import Flashiness
-
-current_game = SollumzGame.GTA
 
 
 def create_mlo_entity_set(entity_set_xml: ytypxml.EntitySet, archetype: ArchetypeProperties):
@@ -394,7 +392,7 @@ def create_archetype(archetype_xml: ytypxml.BaseArchetype, ytyp: CMapTypesProper
     archetype.asset_name = archetype_xml.asset_name
     archetype.asset_type = get_asset_type_enum(archetype_xml.asset_type)
 
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         archetype.load_flags = int(archetype_xml.load_flags, 0)
         archetype.guid = int(archetype_xml.guid, 0)
         archetype.unknown_1 = get_map_entity_type_enum(archetype_xml.unknown_1)
@@ -418,12 +416,11 @@ def create_archetype(archetype_xml: ytypxml.BaseArchetype, ytyp: CMapTypesProper
 def ytyp_to_obj(ytyp_xml: ytypxml.CMapTypes, game: SollumzGame):
     """Create a ytyp data-block in the Blender scene given a ytyp cwxml."""
 
-    global current_game
-    current_game = game
+    set_import_export_current_game(game)
 
     ytyp: CMapTypesProperties = bpy.context.scene.ytyps.add()
     ytyp.name = ytyp_xml.name
-    ytyp.game = current_game
+    ytyp.game = current_game()
 
     bpy.context.scene.ytyp_index = len(bpy.context.scene.ytyps) - 1
 

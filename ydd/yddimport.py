@@ -4,7 +4,7 @@ from typing import Optional
 from ..cwxml.drawable import YDD, DrawableDictionary, Skeleton
 from ..cwxml.fragment import YFT, Fragment
 from ..ydr.ydrimport import create_drawable_obj, create_drawable_skel, apply_rotation_limits, set_bone_properties, create_bpy_bone
-from ..sollumz_properties import SollumType, SollumzGame
+from ..sollumz_properties import SollumType, SollumzGame, import_export_current_game as current_game, set_import_export_current_game
 from ..sollumz_preferences import get_import_settings
 from ..tools.blenderhelper import create_empty_object, create_blender_object
 from ..tools.utils import get_filename
@@ -12,15 +12,13 @@ from mathutils import Matrix
 
 from .. import logger
 
-current_game = SollumzGame.GTA
 
 def import_ydd(filepath: str):
     import_settings = get_import_settings()
 
     ydd_xml = YDD.from_xml_file(filepath)
-    
-    global current_game
-    current_game = ydd_xml.game
+    set_import_export_current_game(ydd_xml.game)
+
     print("Reading YDD as game:", ydd_xml.game)
     print("YDD data:", dir(ydd_xml))
 
@@ -28,9 +26,9 @@ def import_ydd(filepath: str):
         skel_yft = load_external_skeleton(filepath)
 
         if skel_yft is not None and skel_yft.drawable.skeleton is not None:
-            if current_game == SollumzGame.GTA:
+            if current_game() == SollumzGame.GTA:
                 return create_ydd_obj_ext_skel(ydd_xml, filepath, skel_yft)
-            elif current_game == SollumzGame.RDR:
+            elif current_game() == SollumzGame.RDR:
                 return RDR_create_ydd_obj_ext_skel(ydd_xml, filepath, skel_yft)
 
     return create_ydd_obj(ydd_xml, filepath)
@@ -128,7 +126,7 @@ def RDR_create_ydd_obj_ext_skel(ydd_xml: DrawableDictionary, filepath: str, exte
             external_bones = external_skel.drawable.skeleton.bones
 
         drawable_obj = create_drawable_obj(
-            drawable_xml, filepath, external_armature=external_armature, external_bones=external_bones, game=current_game)
+            drawable_xml, filepath, external_armature=external_armature, external_bones=external_bones, game=current_game())
         drawable_obj.parent = external_armature
 
     return external_armature
@@ -374,7 +372,7 @@ def create_merged_armature(name, skeleton_arr):
 #     # print("Extradebug", drawable_skel.extra_skeletons, dir(drawable_skel.extra_skeletons))
 #     _create_skel(drawable_skel.skeleton.bones, drawable_skel.extra_skeletons, skel_yft.bones, dict_obj)
 
-#     if current_game == SollumzGame.GTA:
+#     if current_game() == SollumzGame.GTA:
 #         rot_limits = skel_yft.drawable.joints.rotation_limits
 #         if rot_limits:
 #             apply_rotation_limits(rot_limits, dict_obj)
@@ -386,10 +384,10 @@ def create_merged_armature(name, skeleton_arr):
 def create_ydd_obj(ydd_xml: DrawableDictionary, filepath: str):
 
     name = get_filename(filepath)
-    dict_obj = create_empty_object(SollumType.DRAWABLE_DICTIONARY, name, current_game)
+    dict_obj = create_empty_object(SollumType.DRAWABLE_DICTIONARY, name, current_game())
 
     ydd_xml_list = ydd_xml
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         ydd_xml_list = ydd_xml.drawables
 
     ydd_skel = find_first_skel(ydd_xml_list)
@@ -401,7 +399,7 @@ def create_ydd_obj(ydd_xml: DrawableDictionary, filepath: str):
             external_bones = None
 
         drawable_obj = create_drawable_obj(
-            drawable_xml, filepath,name= drawable_xml.hash, external_bones=external_bones, game=current_game)
+            drawable_xml, filepath,name= drawable_xml.hash, external_bones=external_bones, game=current_game())
         drawable_obj.parent = dict_obj
 
     return dict_obj
@@ -414,7 +412,7 @@ def create_armature_parent(name: str, skel_yft: Fragment, game: SollumzGame = So
 
     create_drawable_skel(skel_yft.drawable, dict_obj)
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         rot_limits = skel_yft.drawable.joints.rotation_limits
         if rot_limits:
             apply_rotation_limits(rot_limits, dict_obj)

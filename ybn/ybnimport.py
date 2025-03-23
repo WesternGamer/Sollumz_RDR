@@ -21,7 +21,7 @@ from ..cwxml.bound import (
     Polygon,
     Material as ColMaterial
 )
-from ..sollumz_properties import SollumType, SOLLUMZ_UI_NAMES, SollumzGame
+from ..sollumz_properties import SollumType, SOLLUMZ_UI_NAMES, SollumzGame, import_export_current_game as current_game, set_import_export_current_game
 from .collision_materials import create_collision_material_from_index, create_collision_material_from_name
 from ..tools.meshhelper import (
     create_box,
@@ -36,25 +36,21 @@ from ..tools.blenderhelper import create_blender_object, create_empty_object
 from mathutils import Matrix, Vector
 
 
-current_game = SollumzGame.GTA
-
 def import_ybn(filepath):
     ybn_xml: BoundFile = YBN.from_xml_file(filepath)
     name = os.path.basename(
         filepath.replace(YBN.file_extension, ""))
-    global current_game
-    current_game = ybn_xml.game
-    if current_game == SollumzGame.GTA:
+    set_import_export_current_game(ybn_xml.game)
+    if current_game() == SollumzGame.GTA:
         return create_bound_composite(ybn_xml.composite, name)
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         return create_rdr_bound(ybn_xml, name)
 
 
 def create_bound_composite(composite_xml: BoundComposite, name: Optional[str] = None):
-    global current_game
-    current_game = SollumzGame.GTA
-    obj = create_empty_object(SollumType.BOUND_COMPOSITE, name, current_game)
-    obj.sollum_game_type = current_game
+    set_import_export_current_game(SollumzGame.GTA)
+    obj = create_empty_object(SollumType.BOUND_COMPOSITE, name, current_game())
+    obj.sollum_game_type = current_game()
 
     for child in composite_xml.children:
         child_obj = create_bound_object(child)
@@ -68,18 +64,17 @@ def create_bound_composite(composite_xml: BoundComposite, name: Optional[str] = 
 
 
 def create_rdr_bound(bound_xml: RDRBoundFile, name: Optional[str] = None):
-    global current_game
-    current_game = SollumzGame.RDR
-    obj = create_empty_object(SollumType.BOUND_COMPOSITE, name, current_game)
-    obj.sollum_game_type = current_game
+    set_import_export_current_game(SollumzGame.RDR)
+    obj = create_empty_object(SollumType.BOUND_COMPOSITE, name, current_game())
+    obj.sollum_game_type = current_game()
 
-    set_bound_properties(bound_xml, obj, current_game)
+    set_bound_properties(bound_xml, obj, current_game())
     for child in bound_xml.children:
-        child_obj = create_bound_object(child, current_game)
+        child_obj = create_bound_object(child, current_game())
         if child_obj is None:
             continue
 
-        set_bound_properties(child, child_obj, current_game)
+        set_bound_properties(child, child_obj, current_game())
         child_obj.parent = obj
 
     return obj 
@@ -87,8 +82,7 @@ def create_rdr_bound(bound_xml: RDRBoundFile, name: Optional[str] = None):
 
 def create_bound_object(bound_xml: BoundChild | Bound, game: SollumzGame= SollumzGame.GTA):
     """Create a bound object based on ``bound_xml.type``"""
-    global current_game
-    current_game = game
+    set_import_export_current_game(game)
     if bound_xml.type == "Box":
         return create_bound_box(bound_xml)
 
@@ -113,17 +107,17 @@ def create_bound_object(bound_xml: BoundChild | Bound, game: SollumzGame= Sollum
 
 def create_bound_child_mesh(bound_xml: BoundChild, sollum_type: SollumType, mesh: Optional[bpy.types.Mesh] = None):
     """Create a bound mesh object with materials and composite properties set."""
-    obj = create_blender_object(sollum_type, object_data=mesh, sollum_game_type=current_game)
+    obj = create_blender_object(sollum_type, object_data=mesh, sollum_game_type=current_game())
 
     mat = None
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         mat = create_collision_material_from_index(bound_xml.material_index)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         mat = create_collision_material_from_name(bound_xml.material_name)
 
     set_bound_col_material_properties(bound_xml, mat)
     obj.data.materials.append(mat)
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         obj.bound_properties.unk_11h = bound_xml.unk_11h
 
     set_bound_child_properties(bound_xml, obj)
@@ -142,10 +136,10 @@ def set_composite_flags(bound_xml: BoundChild, bound_obj: bpy.types.Object):
             flag_props = getattr(bound_obj, flags_propname)
 
             setattr(flag_props, flag.lower(), True)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         set_flags("composite_flags1")
         set_flags("composite_flags2")
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         set_flags("type_flags")
         set_flags("include_flags")
 
@@ -199,18 +193,18 @@ def create_bound_geometry(geom_xml: BoundGeometry):
     triangles = get_poly_triangles(geom_xml.polygons)
 
     mesh = create_bound_mesh_data(geom_xml.vertices, triangles, geom_xml.vertex_colors, materials)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         mesh.transform(Matrix.Translation(geom_xml.geometry_center))
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         mesh.transform(Matrix.Translation((geom_xml.box_min+geom_xml.box_max)*0.5))
     
-    geom_obj = create_blender_object(SollumType.BOUND_GEOMETRY, object_data=mesh, sollum_game_type=current_game)
+    geom_obj = create_blender_object(SollumType.BOUND_GEOMETRY, object_data=mesh, sollum_game_type=current_game())
     set_bound_child_properties(geom_xml, geom_obj)
     return geom_obj
 
 
 def create_bvh_obj(bvh_xml: BoundGeometryBVH):
-    bvh_obj = create_empty_object(SollumType.BOUND_GEOMETRYBVH, sollum_game_type=current_game)
+    bvh_obj = create_empty_object(SollumType.BOUND_GEOMETRYBVH, sollum_game_type=current_game())
     set_bound_child_properties(bvh_xml, bvh_obj)
 
     materials = create_geometry_materials(bvh_xml)
@@ -221,10 +215,10 @@ def create_bvh_obj(bvh_xml: BoundGeometryBVH):
 
     if triangles:
         mesh = create_bound_mesh_data(bvh_xml.vertices, triangles, bvh_xml.vertex_colors, materials)
-        bound_geom_obj = create_blender_object(SollumType.BOUND_POLY_TRIANGLE, object_data=mesh, sollum_game_type=current_game)
-        if current_game == SollumzGame.GTA:
+        bound_geom_obj = create_blender_object(SollumType.BOUND_POLY_TRIANGLE, object_data=mesh, sollum_game_type=current_game())
+        if current_game() == SollumzGame.GTA:
             bound_geom_obj.location = bvh_xml.geometry_center
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             bound_geom_obj.location = (bvh_xml.box_min+bvh_xml.box_max)*0.5
         bound_geom_obj.parent = bvh_obj
 
@@ -237,9 +231,9 @@ def create_geometry_materials(geometry: BoundGeometryBVH):
     mat_xml: ColMaterial
     for mat_xml in geometry.materials:
         mat = None
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             mat = create_collision_material_from_index(mat_xml.type)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             mat = create_collision_material_from_name(mat_xml.name)
 
         if mat is None:
@@ -262,7 +256,7 @@ def set_col_material_properties(mat_xml: ColMaterial, mat: bpy.types.Material):
     mat.collision_properties.procedural_id = mat_xml.procedural_id
     mat.collision_properties.unk = mat_xml.unk
     mat.collision_properties.room_id = mat_xml.room_id
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         mat.collision_properties.ped_density = mat_xml.ped_density
         mat.collision_properties.material_color_index = mat_xml.material_color_index
 
@@ -270,18 +264,18 @@ def set_col_material_properties(mat_xml: ColMaterial, mat: bpy.types.Material):
 
 
 def set_bound_col_material_properties(bound_xml: Bound, mat: bpy.types.Material):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         mat.collision_properties.procedural_id = bound_xml.procedural_id
         mat.collision_properties.room_id = bound_xml.room_id
         mat.collision_properties.ped_density = bound_xml.ped_density
         mat.collision_properties.material_color_index = bound_xml.material_color_index
         set_collision_mat_raw_flags(mat.collision_flags, bound_xml.unk_flags, bound_xml.poly_flags)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         set_col_material_flags(mat, bound_xml.material_flags)
 
 
 def create_bvh_polys(bvh: BoundGeometryBVH, materials: list[bpy.types.Material], bvh_obj: bpy.types.Object):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         for poly in bvh.polygons:
             if type(poly) is PolyTriangle:
                 continue
@@ -289,7 +283,7 @@ def create_bvh_polys(bvh: BoundGeometryBVH, materials: list[bpy.types.Material],
             poly_obj = poly_to_obj(poly, materials, bvh.vertices)
             poly_obj.location += bvh.geometry_center
             poly_obj.parent = bvh_obj
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         for poly in bvh.polygons:
             if poly[0] == 'Tri':
                 continue
@@ -302,26 +296,26 @@ def create_bvh_polys(bvh: BoundGeometryBVH, materials: list[bpy.types.Material],
 def init_poly_obj(poly, sollum_type, materials):
     name = SOLLUMZ_UI_NAMES[sollum_type]
     mesh = bpy.data.meshes.new(name)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         mat_index = poly.material_index
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         mat_index = poly[1]
     if mat_index < len(materials):
         mesh.materials.append(materials[mat_index])
 
-    obj = create_blender_object(sollum_type, name, mesh, current_game)
+    obj = create_blender_object(sollum_type, name, mesh, current_game())
     return obj
 
 
 def create_poly_box(poly, materials, vertices):
     obj = init_poly_obj(poly, SollumType.BOUND_POLY_BOX, materials)
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         v1 = vertices[poly.v1]
         v2 = vertices[poly.v2]
         v3 = vertices[poly.v3]
         v4 = vertices[poly.v4]
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         v1 = vertices[poly[2]]
         v2 = vertices[poly[3]]
         v3 = vertices[poly[4]]
@@ -394,10 +388,10 @@ def create_poly_box(poly, materials, vertices):
 
 def create_poly_sphere(poly, materials, vertices):
     sphere = init_poly_obj(poly, SollumType.BOUND_POLY_SPHERE, materials)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         radius = poly.radius
         location = vertices[poly.v]
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         radius = poly[3]
         location = vertices[poly[2]]
     create_sphere(sphere.data, radius)
@@ -407,11 +401,11 @@ def create_poly_sphere(poly, materials, vertices):
 
 def create_poly_capsule(poly, materials, vertices):
     capsule = init_poly_obj(poly, SollumType.BOUND_POLY_CAPSULE, materials)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         v1 = vertices[poly.v1]
         v2 = vertices[poly.v2]
         radius = poly.radius
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         v1 = vertices[poly[2]]
         v2 = vertices[poly[3]]
         radius = poly[4]
@@ -428,11 +422,11 @@ def create_poly_capsule(poly, materials, vertices):
 
 def create_poly_cylinder(poly, materials, vertices):
     cylinder = init_poly_obj(poly, SollumType.BOUND_POLY_CYLINDER, materials)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         v1 = vertices[poly.v1]
         v2 = vertices[poly.v2]
         radius = poly.radius
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         v1 = vertices[poly[2]]
         v2 = vertices[poly[3]]
         radius = poly[4]
@@ -465,16 +459,16 @@ RDR_POLY_TO_OBJ_MAP = {
 }
 
 def poly_to_obj(poly, materials, vertices) -> bpy.types.Object:
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         return POLY_TO_OBJ_MAP[type(poly)](poly, materials, vertices)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         return RDR_POLY_TO_OBJ_MAP[poly[0]](poly, materials, vertices)
 
 
 def get_poly_triangles(polys: list[Polygon]):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         return [poly for poly in polys if isinstance(poly, PolyTriangle)]
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         return [poly for poly in polys if poly[0] == "Tri"]
 
 
@@ -505,9 +499,9 @@ def apply_bound_geom_materials(mesh: bpy.types.Mesh, triangles: list[PolyTriangl
         mesh.materials.append(mat)
 
     for i, poly_xml in enumerate(triangles):
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             mesh.polygons[i].material_index = poly_xml.material_index
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             mesh.polygons[i].material_index = poly_xml[1]
 
 
@@ -524,7 +518,7 @@ def get_bound_geom_mesh_data(
     faces = []
     colors = [] if vertex_colors else None
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         for poly in triangles:
             face = []
             for v in [vertices[poly.v1], vertices[poly.v2], vertices[poly.v3]]:
@@ -537,7 +531,7 @@ def get_bound_geom_mesh_data(
 
             if colors is not None:
                 colors.extend(_color_to_float(vertex_colors[v]) for v in [poly.v1, poly.v2, poly.v3])
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         for poly in triangles:
                 face = []
                 for v in [vertices[poly[2]], vertices[poly[3]], vertices[poly[4]]]:
@@ -555,7 +549,7 @@ def get_bound_geom_mesh_data(
 
 
 def set_bound_properties(bound_xml: Bound, bound_obj: bpy.types.Object, game: SollumzGame = SollumzGame.GTA):
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         bound_obj.bound_properties.mass = bound_xml.mass
 
 

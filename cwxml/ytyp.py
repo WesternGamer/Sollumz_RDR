@@ -11,9 +11,8 @@ from .element import (
 )
 from .ymap import EntityList, ExtensionsList
 from numpy import float32
-from ..sollumz_properties import SollumzGame
+from ..sollumz_properties import SollumzGame, import_export_current_game as current_game, set_import_export_current_game
 
-current_game = SollumzGame.GTA
 
 class YTYP:
 
@@ -21,11 +20,10 @@ class YTYP:
 
     @staticmethod
     def from_xml_file(filepath):
-        global current_game
         if ".rsc" in filepath:
-            current_game = SollumzGame.RDR
+            set_import_export_current_game(SollumzGame.RDR)
         else:
-            current_game = SollumzGame.GTA
+            set_import_export_current_game(SollumzGame.GTA)
         return CMapTypes.from_xml_file(filepath)
 
     @staticmethod
@@ -39,12 +37,12 @@ class BaseArchetype(ElementTree):
     def __init__(self):
         super().__init__()
         self.type = AttributeProperty("type", "CBaseArchetypeDef")
-        if current_game == SollumzGame.RDR:
+        if current_game() == SollumzGame.RDR:
             self.load_flags = ValueProperty("loadFlags")
         self.lod_dist = ValueProperty("lodDist")
         self.flags = ValueProperty("flags")
         self.avoidanceflags = ValueProperty("avoidanceflags")
-        if current_game == SollumzGame.RDR:
+        if current_game() == SollumzGame.RDR:
             self.special_attribute = ValueProperty("specialAttribute")
         self.bb_min = VectorProperty("bbMin")
         self.bb_max = VectorProperty("bbMax")
@@ -59,7 +57,7 @@ class BaseArchetype(ElementTree):
         self.asset_type = TextProperty("assetType")
         self.asset_name = TextProperty("assetName")
         self.extensions = ExtensionsList()
-        if current_game == SollumzGame.RDR:
+        if current_game() == SollumzGame.RDR:
             self.guid = ValueProperty("guid")
             self.unknown_1 = TextProperty("iypiqkia_0x07d164a8")
 
@@ -177,9 +175,9 @@ class Portal(ElementTree):
         self.mirror_priority = ValueProperty("mirrorPriority")
         self.opacity = ValueProperty("opacity")
         self.audio_occlusion = ValueProperty("audioOcclusion")
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             self.corners = CornersList()
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             self.corners = RDRCorners()
         self.attached_objects = AttachedObjectsBuffer()
 

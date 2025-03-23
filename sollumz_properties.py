@@ -174,6 +174,18 @@ class SollumzGame(str, Enum):
     RDR = "sollumz_rdr3"
 
 
+_import_export_current_game = SollumzGame.GTA
+
+
+def import_export_current_game() -> SollumzGame:
+    return _import_export_current_game
+
+
+def set_import_export_current_game(game: SollumzGame):
+    global _import_export_current_game
+    _import_export_current_game = SollumzGame(game)
+
+
 FRAGMENT_TYPES = [
     SollumType.FRAGMENT,
     SollumType.FRAGGROUP,

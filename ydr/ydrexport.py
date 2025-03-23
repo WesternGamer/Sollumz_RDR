@@ -58,7 +58,9 @@ from ..sollumz_properties import (
     BOUND_TYPES,
     LODLevel,
     SollumType,
-    SollumzGame
+    SollumzGame,
+    import_export_current_game as current_game,
+    set_import_export_current_game,
 )
 from ..sollumz_preferences import get_export_settings
 from ..ybn.ybnexport import create_composite_xml, create_bound_xml
@@ -71,10 +73,7 @@ from .lights import create_xml_lights
 from ..cwxml.shader import ShaderManager, ShaderDef, ShaderParameterCBufferDef, ShaderParameterFloatVectorDef, ShaderParameterSamplerDef, ShaderParameterType
 
 from .. import logger
-from ..cwxml import drawable, shader
-from ..ybn import ybnexport
 
-current_game = SollumzGame.GTA
 
 def export_ydr(drawable_obj: bpy.types.Object, filepath: str) -> bool:
     export_settings = get_export_settings()
@@ -85,23 +84,25 @@ def export_ydr(drawable_obj: bpy.types.Object, filepath: str) -> bool:
     write_embedded_textures(drawable_obj, filepath)
     return True
 
+def test():
+    print(f"drawable {current_game()=}")
 
 def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[bpy.types.Object] = None, materials: Optional[list[bpy.types.Material]] = None, apply_transforms: bool = False):
     """Create a ``Drawable`` cwxml object. Optionally specify an external ``armature_obj`` if ``drawable_obj`` is not an armature."""
-    global current_game
-    current_game = drawable_obj.sollum_game_type
-    drawable.current_game = current_game
+    test()
+    set_import_export_current_game(drawable_obj.sollum_game_type)
+    test()
 
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         tag_name = "RDR2Drawable"
-    elif current_game == SollumzGame.GTA:
+    elif current_game() == SollumzGame.GTA:
         tag_name = "Drawable"
     drawable_xml = Drawable(tag_name)
     drawable_xml.frag_bound_matrix = None
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         drawable_xml.name = remove_number_suffix(drawable_obj.name.lower())
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         obj_parent = find_sollumz_parent(drawable_obj, SollumType.DRAWABLE_DICTIONARY)
         if obj_parent is not None:
             drawable_xml.name = remove_number_suffix(obj_parent.name.lower())
@@ -125,7 +126,7 @@ def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[b
         armature_obj = armature_obj or drawable_obj
 
         drawable_xml.skeleton = create_skeleton_xml(armature_obj, apply_transforms)
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             drawable_xml.joints = create_joints_xml(armature_obj)
 
         bones = armature_obj.data.bones
@@ -140,7 +141,7 @@ def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[b
 
     create_model_xmls(drawable_xml, drawable_obj, materials, bones)
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         drawable_xml.lights = create_xml_lights(drawable_obj)
 
     set_drawable_xml_flags(drawable_xml)
@@ -181,7 +182,7 @@ def create_model_xmls(drawable_xml: Drawable, drawable_obj: bpy.types.Object, ma
     # Drawables only ever have 1 skinned drawable model per LOD level. Since, the skinned portion of the
     # drawable can be split by vertex group, we have to join each separate part into a single object.
     # TODO RDR
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         join_skinned_models_for_each_lod(drawable_xml)
         split_drawable_by_vert_count(drawable_xml)
 
@@ -214,9 +215,9 @@ def sort_skinned_models_by_bone(model_objs: list[bpy.types.Object], bones: list[
 
 @operates_on_lod_level
 def create_model_xml(model_obj: bpy.types.Object, lod_level: LODLevel, materials: list[bpy.types.Material], bones: Optional[list[bpy.types.Bone]] = None, transforms_to_apply: Optional[Matrix] = None):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         model_xml = DrawableModel()
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         model_xml = DrawableModel()
 
     set_model_xml_properties(model_obj, lod_level, bones, model_xml)
@@ -235,7 +236,7 @@ def create_model_xml(model_obj: bpy.types.Object, lod_level: LODLevel, materials
     geometries = geometries_data[0]
     model_xml.geometries = geometries
 
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         if geometries_data[1] != None and parent_obj != None and parent_obj.sollum_type == SollumType.DRAWABLE_DICTIONARY:
             mapping = [bones[index].bone_properties.tag for index in geometries_data[1].values()]
             model_xml.bone_mapping = mapping
@@ -281,7 +282,7 @@ def get_model_bone_index(model_obj: bpy.types.Object):
 def set_model_xml_properties(model_obj: bpy.types.Object, lod_level: LODLevel,bones: Optional[list[bpy.types.Bone]], model_xml: DrawableModel):
     """Set ``DrawableModel`` properties for each lod in ``model_obj``"""
     model_props = get_model_properties(model_obj, lod_level)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         model_xml.render_mask = model_props.render_mask
         model_xml.flags = 0
         model_xml.matrix_count = 0
@@ -289,7 +290,7 @@ def set_model_xml_properties(model_obj: bpy.types.Object, lod_level: LODLevel,bo
         if model_xml.has_skin:
             model_xml.flags = 1  # skin flag, same meaning as has_skin
             model_xml.matrix_count = len(bones)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         model_xml.flags = 0
         model_xml.has_skin = True if bones and model_obj.vertex_groups else False
         if model_xml.has_skin:
@@ -370,8 +371,7 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
 
     bone_by_vgroup = get_bone_by_vgroup(vertex_groups, bones) if bones and vertex_groups else None
 
-    total_vert_buffer = VertexBufferBuilder(mesh_eval, bone_by_vgroup).build(current_game)
-    shader.current_game = current_game
+    total_vert_buffer = VertexBufferBuilder(mesh_eval, bone_by_vgroup).build(current_game())
     for mat_index, loop_inds in loop_inds_by_mat.items():
         material = materials[mat_index]
         vert_buffer = total_vert_buffer[loop_inds]
@@ -383,7 +383,7 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
         vert_buffer = remove_unused_uvs(vert_buffer, used_texcoords)
         vert_buffer = remove_unused_colors(vert_buffer, used_colors)
 
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             normal_required = get_normal_required(material)
 
             if not tangent_required:
@@ -391,7 +391,7 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
 
             if not normal_required:
                 vert_buffer = remove_arr_field("Normal", vert_buffer)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             if not tangent_required:
                 vert_buffer = remove_arr_field("Tangent", vert_buffer)
                 vert_buffer = remove_arr_field("Tangent2", vert_buffer)
@@ -416,10 +416,10 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
         if bones and "BlendWeights" in vert_buffer.dtype.names:
             geom_xml.bone_ids = get_bone_ids(bones)
 
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             geom_xml.vertex_buffer.data = vert_buffer
             geom_xml.index_buffer.data = ind_buffer
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             layout_map = [
                 ["Position", "P", '3'],
                 ["Normal", "N", '9'],
@@ -518,22 +518,22 @@ def get_bone_ids(bones: list[bpy.types.Bone]):
 
 def append_model_xml(drawable_xml: Drawable, model_xml: DrawableModel, lod_level: LODLevel):
     if lod_level == LODLevel.HIGH:
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             drawable_xml.drawable_models_high.append(model_xml)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             drawable_xml.drawable_models_high.models.append(model_xml)
         
 
     elif lod_level == LODLevel.MEDIUM:
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             drawable_xml.drawable_models_med.append(model_xml)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             drawable_xml.drawable_models_med.models.append(model_xml)
 
     elif lod_level == LODLevel.LOW:
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             drawable_xml.drawable_models_low.append(model_xml)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             drawable_xml.drawable_models_low.models.append(model_xml)
 
     elif lod_level == LODLevel.VERYLOW:
@@ -541,7 +541,7 @@ def append_model_xml(drawable_xml: Drawable, model_xml: DrawableModel, lod_level
 
 
 def join_skinned_models_for_each_lod(drawable_xml: Drawable):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         drawable_xml.drawable_models_high = join_skinned_models(
             drawable_xml.drawable_models_high)
         drawable_xml.drawable_models_med = join_skinned_models(
@@ -550,7 +550,7 @@ def join_skinned_models_for_each_lod(drawable_xml: Drawable):
             drawable_xml.drawable_models_low)
         drawable_xml.drawable_models_vlow = join_skinned_models(
             drawable_xml.drawable_models_vlow)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         drawable_xml.drawable_models_high.models = join_skinned_models(
             drawable_xml.drawable_models_high.models)
         drawable_xml.drawable_models_med.models = join_skinned_models(
@@ -573,7 +573,7 @@ def join_skinned_models(model_xmls: list[DrawableModel]):
 
     skinned_model = DrawableModel()
     skinned_model.has_skin = 1
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         skinned_model.render_mask = skinned_models[0].render_mask
         skinned_model.matrix_count = skinned_models[0].matrix_count
     skinned_model.flags = skinned_models[0].flags
@@ -598,12 +598,12 @@ def join_geometries(geometry_xmls: list[Geometry], shader_index: int):
     ind_arrs = get_valid_ind_arrs(geometry_xmls)
     vert_counts = [len(vert_arr) for vert_arr in vert_arrs]
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         new_geom.vertex_buffer.data = join_vert_arrs(vert_arrs)
         new_geom.index_buffer.data = join_ind_arrs(ind_arrs, vert_counts)
         new_geom.bone_ids = list(
             np.unique([geom.bone_ids for geom in geometry_xmls]))
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         new_geom.vertices = join_vert_arrs(vert_arrs)
         new_geom.indices = join_ind_arrs(ind_arrs, vert_counts)
 
@@ -616,16 +616,16 @@ def join_geometries(geometry_xmls: list[Geometry], shader_index: int):
 
 
 def get_valid_vert_arrs(geometry_xmls: list[Geometry]):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         return [geom.vertex_buffer.data for geom in geometry_xmls if geom.vertex_buffer.data is not None and geom.index_buffer.data is not None]
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         return [geom.vertices for geom in geometry_xmls if geom.vertices is not None and geom.indices is not None]
 
 
 def get_valid_ind_arrs(geometry_xmls: list[Geometry]):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         return [geom.index_buffer.data for geom in geometry_xmls if geom.vertex_buffer.data is not None and geom.index_buffer.data is not None]
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         return [geom.indices for geom in geometry_xmls if geom.vertices is not None and geom.indices is not None]
 
 
@@ -679,12 +679,12 @@ def join_ind_arrs(ind_arrs: list[NDArray[np.uint32]], vert_counts: list[int]) ->
 
 
 def split_drawable_by_vert_count(drawable_xml: Drawable):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         split_models_by_vert_count(drawable_xml.drawable_models_high)
         split_models_by_vert_count(drawable_xml.drawable_models_med)
         split_models_by_vert_count(drawable_xml.drawable_models_low)
         split_models_by_vert_count(drawable_xml.drawable_models_vlow)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         split_models_by_vert_count(drawable_xml.drawable_models_high.models)
         split_models_by_vert_count(drawable_xml.drawable_models_med.models)
         split_models_by_vert_count(drawable_xml.drawable_models_low.models)
@@ -768,9 +768,9 @@ def create_shader_group_xml(materials: list[bpy.types.Material], drawable_xml: D
     shaders = get_shaders_from_blender(materials)
     texture_dictionary = texture_dictionary_from_materials(materials)
     drawable_xml.shader_group.shaders = shaders
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         drawable_xml.shader_group.texture_dictionary = texture_dictionary
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         if len(texture_dictionary) > 0:
             drawable_xml.shader_group.texture_dictionary.textures = texture_dictionary
         else:
@@ -811,12 +811,12 @@ def get_embedded_texture_nodes(materials: list[bpy.types.Material]):
 def texture_from_img_node(node: bpy.types.ShaderNodeTexImage):
     texture = Texture()
     texture.name = node.sollumz_texture_name
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         texture.width = node.image.size[0]
         texture.height = node.image.size[1]
         texture.filename = texture.name + ".dds"
 
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         texture.flags = node.texture_properties.extra_flags
     return texture
 
@@ -842,7 +842,7 @@ def create_skeleton_xml(armature_obj: bpy.types.Object, apply_transforms: bool =
 
     calculate_skeleton_unks(skeleton_xml)
 
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         skeleton_xml.unknown_24 = str(armature_obj.drawable_properties.unknown_24)
         skeleton_xml.unknown_60 = str(armature_obj.drawable_properties.unknown_60)
         skeleton_xml.parent_bone_tag = str(armature_obj.drawable_properties.parent_bone_tag)
@@ -861,7 +861,7 @@ def create_bone_xml(pose_bone: bpy.types.PoseBone, bone_index: int, armature: bp
     bone_xml.parent_index = get_bone_parent_index(bone, armature)
     bone_xml.sibling_index = get_bone_sibling_index(bone, armature)
 
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         if bone_xml.sibling_index == -1:
             if bone_xml.parent_index == -1:
                 bone_xml.last_sibling_index = len(armature.bones)
@@ -939,9 +939,9 @@ def set_bone_xml_transforms(bone_xml: Bone, bone: bpy.types.Bone, armature_matri
     # transform_unk doesn't appear in openformats so oiv calcs it right
     # what does it do? the bone length?
     # default value for this seems to be <TransformUnk x="0" y="4" z="-3" w="0" />
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         bone_xml.transform_unk = Quaternion((0, 0, 4, -3))
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         transform_unk_y = 4 * pow(bone_xml.rotation.w, 2)
         transform_unk_z = 1 - transform_unk_y
         if transform_unk_y == 4.0 and transform_unk_z == -3.0:
@@ -981,11 +981,11 @@ def calculate_skeleton_unks(skeleton_xml: Skeleton):
             translation), " ".join(rotation), " ".join(scale)))
         unk_50.append(unk_50_str)
         unk_58.append(unk_58_str)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         skeleton_xml.unknown_50 = jenkhash.Generate(" ".join(unk_50))
         skeleton_xml.unknown_54 = zlib.crc32(" ".join(unk_50).encode())
         skeleton_xml.unknown_58 = zlib.crc32(" ".join(unk_58).encode())
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         skeleton_xml.unknown_50 = str(jenkhash.Generate(" ".join(unk_50)))
         skeleton_xml.unknown_54 = str(zlib.crc32(" ".join(unk_50).encode()))
         skeleton_xml.unknown_58 = str(zlib.crc32(" ".join(unk_58).encode()))
@@ -1060,12 +1060,12 @@ def set_joint_properties(joint: BoneLimit, constraint: bpy.types.LimitRotationCo
 
 
 def set_drawable_xml_flags(drawable_xml: Drawable):
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         drawable_xml.flags_high = len(drawable_xml.drawable_models_high)
         drawable_xml.flags_med = len(drawable_xml.drawable_models_med)
         drawable_xml.flags_low = len(drawable_xml.drawable_models_low)
         drawable_xml.flags_vlow = len(drawable_xml.drawable_models_vlow)
-    elif current_game == SollumzGame.RDR:
+    elif current_game() == SollumzGame.RDR:
         drawable_xml.flags_high = len(drawable_xml.drawable_models_high.models)
         drawable_xml.flags_med = len(drawable_xml.drawable_models_med.models)
         drawable_xml.flags_low = len(drawable_xml.drawable_models_low.models)
@@ -1076,7 +1076,7 @@ def set_drawable_xml_extents(drawable_xml: Drawable):
     mins: list[Vector] = []
     maxes: list[Vector] = []
     models = drawable_xml.drawable_models_high
-    if current_game == SollumzGame.RDR:
+    if current_game() == SollumzGame.RDR:
         models = drawable_xml.drawable_models_high.models
     for model_xml in models:
         for geometry in model_xml.geometries:
@@ -1225,14 +1225,14 @@ def get_shaders_from_blender(materials):
     for material in materials:
         shader = Shader()
         shader.name = material.shader_properties.name
-        if current_game == SollumzGame.GTA:
+        if current_game() == SollumzGame.GTA:
             shader.filename = material.shader_properties.filename
             shader.render_bucket = RenderBucket[material.shader_properties.renderbucket].value
             shader_def = ShaderManager.find_shader(shader.filename)
             shader.parameters = create_shader_parameters_list_template(shader_def)
-        elif current_game == SollumzGame.RDR:
+        elif current_game() == SollumzGame.RDR:
             shader.draw_bucket = RenderBucket[material.shader_properties.renderbucket].value
-            shader_def = ShaderManager.find_shader(shader.name, current_game)
+            shader_def = ShaderManager.find_shader(shader.name, current_game())
             shader_bucket = shader_def.render_bucket
             if not isinstance(shader_bucket, int):
                 shader_bucket = shader_bucket[0]
@@ -1251,9 +1251,9 @@ def get_shaders_from_blender(materials):
                     continue
 
                 param = TextureShaderParameter()
-                if current_game == SollumzGame.GTA:
+                if current_game() == SollumzGame.GTA:
                     param.texture_name = node.sollumz_texture_name
-                elif current_game == SollumzGame.RDR:
+                elif current_game() == SollumzGame.RDR:
                     param.index = node.texture_properties.index
                     if node.sollumz_texture_name == "None":
                         delattr(param, "texture_name")
@@ -1268,7 +1268,7 @@ def get_shaders_from_blender(materials):
             elif isinstance(node, SzShaderNodeParameter):
                 param_def = shader_def.parameter_map.get(node.name, None)
 
-                if current_game == SollumzGame.RDR:
+                if current_game() == SollumzGame.RDR:
                     for key, value in shader_def.parameter_map.items():
                         if jenkhash.GenerateCaseSensitive(node.name) == jenkhash.GenerateCaseSensitive(key):
                             param_def = value
@@ -1327,14 +1327,14 @@ def get_shaders_from_blender(materials):
 
             if param is not None:
                 param.name = node.name
-                if current_game == SollumzGame.GTA:
+                if current_game() == SollumzGame.GTA:
                     parameter_index = next((i for i, x in enumerate(shader.parameters) if x.name == param.name), None)
                     if parameter_index is None:
                         shader.parameters.append(param)
                     else:
                         shader.parameters[parameter_index] = param
 
-                elif current_game == SollumzGame.RDR:
+                elif current_game() == SollumzGame.RDR:
                     parameter_index = next((i for i, x in enumerate(shader.parameters.items) if jenkhash.GenerateCaseSensitive(x.name) == jenkhash.GenerateCaseSensitive(param.name)), None)
 
                     if parameter_index is None:

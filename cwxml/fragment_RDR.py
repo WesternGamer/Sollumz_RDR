@@ -2,7 +2,7 @@ from abc import ABC as AbstractClass
 from mathutils import Matrix
 from xml.etree import ElementTree as ET
 
-from ..sollumz_properties import SollumzGame
+from ..sollumz_properties import SollumzGame, import_export_current_game as current_game, set_import_export_current_game
 from .element import (
     AttributeProperty,
     ElementTree,
@@ -23,7 +23,7 @@ from . import drawable
 
 class RDRFragDrawable(Drawable):
     def __init__(self, tag_name: str = "Drawable"):
-        drawable.current_game = SollumzGame.RDR
+        set_import_export_current_game(SollumzGame.RDR)
         super().__init__(tag_name)
         self.name = TextProperty("FragName", "")
         self.matrix = MatrixProperty("FragMatrix")

@@ -113,7 +113,7 @@ class MeshBuilder:
 
             create_color_attr(mesh, color_idx, initial_values=colors[self.ind_arr])
 
-    def create_vertex_groups(self, obj: bpy.types.Object, bones: list[bpy.types.Bone], current_game: SollumzGame = SollumzGame.GTA, bone_mapping = None):
+    def create_vertex_groups(self, obj: bpy.types.Object, bones: list[bpy.types.Bone], game: SollumzGame = SollumzGame.GTA, bone_mapping = None):
         vertex_groups: dict[int, bpy.types.VertexGroup] = {}
 
         def get_bone_by_tag(tag):
@@ -132,10 +132,10 @@ class MeshBuilder:
         def create_group(bone_index: int):
             bone_name = f"UNKNOWN_BONE.{bone_index}"
 
-            if current_game == SollumzGame.GTA:
+            if game == SollumzGame.GTA:
                 if bones and bone_index < len(bones):
                     bone_name = bones[bone_index].name
-            elif current_game == SollumzGame.RDR:
+            elif game == SollumzGame.RDR:
                 if bone_mapping != None and len(bone_mapping) > 0:
                     if bone_index > len(bone_mapping):
                         raise Exception(f"Unable to get bone mapping as index {bone_index} is out of range in {bone_mapping}")
@@ -171,7 +171,7 @@ class MeshBuilder:
         indices = self.vertex_arr["BlendIndices"]
         create_weights(weights, indices)
 
-        if current_game == SollumzGame.RDR:
+        if game == SollumzGame.RDR:
             weights2 = self.vertex_arr["BlendWeights1"] / 255
             indices2 = self.vertex_arr["BlendIndices1"]
             create_weights(weights2, indices2)

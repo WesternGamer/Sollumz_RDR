@@ -11,7 +11,7 @@ from ..tools.blenderhelper import add_child_of_bone_constraint, create_empty_obj
 from ..tools.meshhelper import create_uv_attr
 from ..tools.utils import multiply_homogeneous, get_filename
 from ..shared.shader_nodes import SzShaderNodeParameter
-from ..sollumz_properties import BOUND_TYPES, SollumType, MaterialType, SollumzGame
+from ..sollumz_properties import BOUND_TYPES, SollumType, MaterialType, SollumzGame, import_export_current_game as current_game, set_import_export_current_game
 from ..sollumz_preferences import get_import_settings
 from ..cwxml.fragment import YFT, Fragment, PhysicsLOD, PhysicsGroup, PhysicsChild, Window, Archetype, GlassWindow
 from ..cwxml.drawable import Drawable, Bone
@@ -22,7 +22,6 @@ from .properties import LODProperties, FragArchetypeProperties, GlassTypes, Frag
 from ..tools.blenderhelper import get_child_of_bone
 from ..ydr import ydrimport
 
-current_game = SollumzGame.GTA
 
 def import_yft(filepath: str):
     raise Exception("Fragment import has been disabled as it's Work In Progress")
@@ -45,8 +44,7 @@ def import_yft(filepath: str):
     yft_xml = YFT.from_xml_file(non_hi_filepath)
 
     if isinstance(yft_xml, RDRFragment):
-        global current_game
-        current_game = SollumzGame.RDR
+        set_import_export_current_game(SollumzGame.RDR)
 
     if import_settings.import_as_asset:
         return create_drawable_as_asset(yft_xml.drawable, name, non_hi_filepath)
@@ -91,7 +89,7 @@ def create_fragment_obj(frag_xml: Fragment, filepath: str, name: Optional[str] =
 
     materials = shadergroup_to_materials(frag_xml.drawable.shader_group, filepath)
 
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         # Need to append [PAINT_LAYER] extension at the end of the material names
         for mat in materials:
             if "matDiffuseColor" in mat.node_tree.nodes:
@@ -139,7 +137,7 @@ def create_frag_armature(frag_xml: Fragment, name: Optional[str] = None):
     drawable_xml = frag_xml.drawable
     frag_obj = create_armature_obj_from_skel(
         drawable_xml.skeleton, name, SollumType.FRAGMENT)
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         create_joint_constraints(frag_obj, drawable_xml.joints)
 
     set_fragment_properties(frag_xml, frag_obj)
@@ -526,7 +524,7 @@ def create_frag_lights(frag_xml: Fragment, frag_obj: bpy.types.Object):
 
 def set_fragment_properties(frag_xml: Fragment, frag_obj: bpy.types.Object):
     # unknown_c0 include "entity class" and "attach bottom end" but those are always 0 in game assets and seem unused
-    if current_game == SollumzGame.GTA:
+    if current_game() == SollumzGame.GTA:
         frag_obj.fragment_properties.template_asset = FragmentTemplateAsset((frag_xml.unknown_c0 >> 8) & 0xFF).name
         frag_obj.fragment_properties.unbroken_elasticity = frag_xml.unknown_cc
         frag_obj.fragment_properties.gravity_factor = frag_xml.gravity_factor
