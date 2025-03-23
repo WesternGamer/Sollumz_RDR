@@ -58,33 +58,14 @@ def export_ybn(obj: bpy.types.Object, filepath: str) -> bool:
 
         composite = create_composite_xml(obj)
 
-        bb_min_all = [[],[],[]]
-        bb_max_all = [[],[],[]]
-
-        for comp in composite.children:
-            boxmin = comp.box_min
-            boxmax = comp.box_max
-
-            bb_min_all[0].append(boxmin.x)
-            bb_min_all[1].append(boxmin.y)
-            bb_min_all[2].append(boxmin.z)
-
-            bb_max_all[0].append(boxmax.x)
-            bb_max_all[1].append(boxmax.y)
-            bb_max_all[2].append(boxmax.z)
-        
-        calcmin = Vector((min(bb_min_all[0]), min(bb_min_all[1]), min(bb_min_all[2])))
-        calcmax = Vector((max(bb_max_all[0]), min(bb_max_all[1]), min(bb_max_all[2])))
-
-        bounds.box_min = calcmin
-        bounds.box_max = calcmax
-        bounds.box_center = get_bound_center_from_bounds(bounds.box_min, bounds.box_max)
-        bounds.sphere_center = bounds.box_center
-        bounds.sphere_radius = get_sphere_radius(bounds.box_max, bounds.box_center)
+        bounds.box_min = composite.box_min
+        bounds.box_max = composite.box_max
+        bounds.box_center = composite.box_center
+        bounds.sphere_center = composite.sphere_center
+        bounds.sphere_radius = composite.sphere_radius
+        bounds.children = composite.children
 
         bounds.mass = obj.bound_properties.mass
-        bounds.inertia = Vector(obj.bound_properties.inertia)
-        bounds.children = composite.children
 
     bounds.write_xml(filepath)
     return True
@@ -96,6 +77,9 @@ def create_composite_xml(
     embedded_col: bool = False,
 ) -> BoundComposite:
     assert obj.sollum_type == SollumType.BOUND_COMPOSITE, f"Expected a Bound Composite, got '{obj.sollum_type}'"
+
+    global current_game
+    current_game = obj.sollum_game_type
 
     if not obj.children:
         # We only do a simple check for children here, if there are any other issues with them it will checked and
@@ -153,11 +137,17 @@ def create_composite_xml(
 
     composite_xml.margin = 0.0  # composite margin always 0
 
+    if current_game == SollumzGame.RDR:
+        composite_xml.mass = obj.bound_properties.mass
+
     return composite_xml
 
 
 def create_bound_xml(obj: bpy.types.Object, is_root: bool = False) -> Optional[BoundChild]:
     """Create a ``Bound`` instance based on `obj.sollum_type``."""
+    global current_game
+    current_game = obj.sollum_game_type
+
     if obj.sollum_type not in {
         SollumType.BOUND_BOX,
         SollumType.BOUND_SPHERE,
@@ -258,11 +248,23 @@ def create_bound_xml(obj: bpy.types.Object, is_root: bool = False) -> Optional[B
             bound_xml = create_bound_geometry_xml(obj)
 
             if bound_xml.vertices and bound_xml.polygons:
-                mesh_vertices = np.array([(v + bound_xml.geometry_center) for v in bound_xml.vertices])
-                mesh_faces = []
-                for poly in bound_xml.polygons:
-                    mesh_faces.append([poly.v1, poly.v2, poly.v3])
-                mesh_faces = np.array(mesh_faces)
+
+                if current_game == SollumzGame.GTA:
+                    mesh_vertices = np.array([(v + bound_xml.geometry_center) for v in bound_xml.vertices])
+                    mesh_faces = []
+                    for poly in bound_xml.polygons:
+                        mesh_faces.append([poly.v1, poly.v2, poly.v3])
+                    mesh_faces = np.array(mesh_faces)
+                elif current_game == SollumzGame.RDR:
+                    geom_center = get_bound_center_from_bounds(bound_xml.box_min, bound_xml.box_max)
+                    mesh_vertices = np.array([(v + geom_center) for v in bound_xml.vertices])
+                    mesh_faces = []
+                    for poly in bound_xml.polygons:
+                        parts = poly.split()
+                        v1 = int(parts[2])
+                        v2 = int(parts[3])
+                        v3 = int(parts[4])
+                        mesh_faces.append([v1, v2, v3])
 
                 centroid, radius_around_centroid = get_centroid_of_mesh(mesh_vertices)
                 volume, cg, inertia = get_mass_properties_of_mesh(mesh_vertices, mesh_faces)
@@ -289,13 +291,28 @@ def create_bound_xml(obj: bpy.types.Object, is_root: bool = False) -> Optional[B
 
             primitives = []
             if bound_xml.vertices and bound_xml.polygons:
-                mesh_vertices = np.array([(v + bound_xml.geometry_center) for v in bound_xml.vertices])
-                mesh_faces = []
-                for poly in bound_xml.polygons:
-                    if not isinstance(poly, PolyTriangle):
-                        primitives.append(poly)
-                        continue
-                    mesh_faces.append([poly.v1, poly.v2, poly.v3])
+                if current_game == SollumzGame.GTA:
+                    mesh_vertices = np.array([(v + bound_xml.geometry_center) for v in bound_xml.vertices])
+                    mesh_faces = []
+                    for poly in bound_xml.polygons:
+                        if not isinstance(poly, PolyTriangle):
+                            primitives.append(poly)
+                            continue
+                        mesh_faces.append([poly.v1, poly.v2, poly.v3])
+                elif current_game == SollumzGame.RDR:
+                    geom_center = get_bound_center_from_bounds(bound_xml.box_min, bound_xml.box_max)
+                    mesh_vertices = np.array([(v + geom_center) for v in bound_xml.vertices])
+                    mesh_faces = []
+                    for poly in bound_xml.polygons:
+                        if not poly.startswith("Tri"):
+                            primitives.append(poly)
+                            continue
+
+                        parts = poly.split()
+                        v1 = int(parts[2])
+                        v2 = int(parts[3])
+                        v3 = int(parts[4])
+                        mesh_faces.append([v1, v2, v3])
 
                 centroid, radius_around_centroid = get_centroid_of_mesh(mesh_vertices)
                 if len(mesh_faces) > 0:
@@ -315,32 +332,35 @@ def create_bound_xml(obj: bpy.types.Object, is_root: bool = False) -> Optional[B
             bound_xml.box_max += Vector((margin, margin, margin))
 
             # Grow radius_around_centroid to fit all primitives
-            for prim in primitives:
-                match prim:
-                    case PolyBox():
-                        # Calculate the opposite corners of the box. The corners stored in the vertices array are
-                        # already inside the bounding sphere, but the opposite corners may not be.
-                        v = mesh_vertices[[prim.v1, prim.v2, prim.v3, prim.v4]]
-                        v0b = Vector((v[1] + v[2] + v[3] - v[0]) * 0.5)
-                        v1b = Vector((v[0] + v[2] + v[3] - v[1]) * 0.5)
-                        v2b = Vector((v[0] + v[1] + v[3] - v[2]) * 0.5)
-                        v3b = Vector((v[0] + v[1] + v[2] - v[3]) * 0.5)
-                        radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v0b, 0.0)
-                        radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v1b, 0.0)
-                        radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v2b, 0.0)
-                        radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v3b, 0.0)
-                    case PolySphere():
-                        # The sphere center vertex is inside the bounding sphere but the whole sphere may not be.
-                        radius_around_centroid = grow_sphere(
-                            centroid, radius_around_centroid, Vector(mesh_vertices[prim.v]), prim.radius)
-                    case PolyCapsule() | PolyCylinder():
-                        # Capsules and cylinders are approximated by two spheres on their ends.
-                        radius_around_centroid = grow_sphere(
-                            centroid, radius_around_centroid, Vector(mesh_vertices[prim.v1]), prim.radius)
-                        radius_around_centroid = grow_sphere(
-                            centroid, radius_around_centroid, Vector(mesh_vertices[prim.v2]), prim.radius)
-                    case _:
-                        assert False, f"Unknown primitive type '{type(prim)}'"
+            if current_game == SollumzGame.GTA:
+                for prim in primitives:
+                    match prim:
+                        case PolyBox():
+                            # Calculate the opposite corners of the box. The corners stored in the vertices array are
+                            # already inside the bounding sphere, but the opposite corners may not be.
+                            v = mesh_vertices[[prim.v1, prim.v2, prim.v3, prim.v4]]
+                            v0b = Vector((v[1] + v[2] + v[3] - v[0]) * 0.5)
+                            v1b = Vector((v[0] + v[2] + v[3] - v[1]) * 0.5)
+                            v2b = Vector((v[0] + v[1] + v[3] - v[2]) * 0.5)
+                            v3b = Vector((v[0] + v[1] + v[2] - v[3]) * 0.5)
+                            radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v0b, 0.0)
+                            radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v1b, 0.0)
+                            radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v2b, 0.0)
+                            radius_around_centroid = grow_sphere(centroid, radius_around_centroid, v3b, 0.0)
+                        case PolySphere():
+                            # The sphere center vertex is inside the bounding sphere but the whole sphere may not be.
+                            radius_around_centroid = grow_sphere(
+                                centroid, radius_around_centroid, Vector(mesh_vertices[prim.v]), prim.radius)
+                        case PolyCapsule() | PolyCylinder():
+                            # Capsules and cylinders are approximated by two spheres on their ends.
+                            radius_around_centroid = grow_sphere(
+                                centroid, radius_around_centroid, Vector(mesh_vertices[prim.v1]), prim.radius)
+                            radius_around_centroid = grow_sphere(
+                                centroid, radius_around_centroid, Vector(mesh_vertices[prim.v2]), prim.radius)
+                        case _:
+                            assert False, f"Unknown primitive type '{type(prim)}'"
+            elif current_game == SollumzGame.RDR:
+                pass  # TODO
 
         case _:
             assert False, f"Unknown bound type '{obj.sollum_type}'"
@@ -370,6 +390,10 @@ def create_bound_xml(obj: bpy.types.Object, is_root: bool = False) -> Optional[B
     set_bound_centroid(bound_xml, centroid, radius_around_centroid)
     set_bound_mass_properties(bound_xml, volume, cg, inertia)
     bound_xml.margin = margin
+
+    if current_game == SollumzGame.RDR:
+        bound_xml.mass = obj.bound_properties.mass
+
     return bound_xml
 
 
@@ -431,17 +455,12 @@ def bound_geom_has_mats(geom_obj: bpy.types.Object) -> bool:
 
 def init_bound_child_xml(bound_xml: T_BoundChild, obj: bpy.types.Object):
     """Initialize ``bound_xml`` bound child properties from object blender properties."""
-    composite_transform = get_composite_transforms(obj).transposed()
-    if current_game == SollumzGame.GTA or (current_game == SollumzGame.RDR and not composite_transform.is_identity):
-        bound_xml.composite_transform = composite_transform
-    else:
-        delattr(bound_xml, "composite_transform")
+    bound_xml.composite_transform = get_composite_transforms(obj).transposed()
 
     if obj.type == "MESH":
         bbmin, bbmax = get_bound_extents(obj)
     elif obj.type == "EMPTY":
-        transform = bound_xml.composite_transform or Matrix.Identity(4)
-        bbmin, bbmax = get_bvh_extents(obj, transform)
+        bbmin, bbmax = get_bvh_extents(obj, bound_xml.composite_transform)
     else:
         return bound_xml
 
@@ -610,8 +629,7 @@ def create_bound_xml_poly_shape(obj: bpy.types.Object, geom_xml: BoundGeometryBV
 
 def get_bound_poly_transforms_to_apply(obj: bpy.types.Object, composite_transform: Matrix):
     """Get the transforms to apply directly to BoundGeometry vertices."""
-    transform = composite_transform or Matrix.Identity(4)
-    composite_transform = transform.transposed()
+    composite_transform = composite_transform.transposed()
     parent_inverse = get_parent_inverse(obj)
 
     # Apply any transforms not covered in composite_transform
@@ -901,7 +919,7 @@ def get_composite_extents(composite_xml: BoundComposite):
     corner_vecs: list[Vector] = []
 
     for child in composite_xml.children:
-        transform = child.composite_transform or Matrix.Identity(4)
+        transform = child.composite_transform
         transform = transform.transposed()
         child_corners = get_corners_from_extents(child.box_min, child.box_max)
         # Get AABB with transforms applied

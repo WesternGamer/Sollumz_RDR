@@ -376,15 +376,15 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
         material = materials[mat_index]
         vert_buffer = total_vert_buffer[loop_inds]
         tangent_required = get_tangent_required(material)
+
+        used_texcoords = get_used_texcoords(material)
+        used_colors = get_used_colors(material)
+
+        vert_buffer = remove_unused_uvs(vert_buffer, used_texcoords)
+        vert_buffer = remove_unused_colors(vert_buffer, used_colors)
+
         if current_game == SollumzGame.GTA:
-            
             normal_required = get_normal_required(material)
-
-            used_texcoords = get_used_texcoords(material)
-            used_colors = get_used_colors(material)
-
-            vert_buffer = remove_unused_uvs(vert_buffer, used_texcoords)
-            vert_buffer = remove_unused_colors(vert_buffer, used_colors)
 
             if not tangent_required:
                 vert_buffer = remove_arr_field("Tangent", vert_buffer)

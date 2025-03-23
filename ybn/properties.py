@@ -168,8 +168,6 @@ class RDRBoundFlags(bpy.types.PropertyGroup):
 
 
 class BoundProperties(bpy.types.PropertyGroup):
-    inertia: bpy.props.FloatVectorProperty(name="Inertia")
-    volume: bpy.props.FloatProperty(name="Volume", precision=3)
     mass: bpy.props.FloatProperty(name="Mass", precision=3)
     unk_11h: bpy.props.IntProperty(name="Unknown 11")
     unk_float_1: bpy.props.FloatProperty(name="UnkFloat 1")

@@ -73,12 +73,13 @@ def create_rdr_bound(bound_xml: RDRBoundFile, name: Optional[str] = None):
     obj = create_empty_object(SollumType.BOUND_COMPOSITE, name, current_game)
     obj.sollum_game_type = current_game
 
-    set_bound_properties(bound_xml, obj, current_game)  
+    set_bound_properties(bound_xml, obj, current_game)
     for child in bound_xml.children:
         child_obj = create_bound_object(child, current_game)
         if child_obj is None:
             continue
 
+        set_bound_properties(child, child_obj, current_game)
         child_obj.parent = obj
 
     return obj 
