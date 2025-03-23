@@ -572,6 +572,7 @@ def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA, in_place_m
 
     mat = in_place_material or bpy.data.materials.new(material_name)
     mat.sollum_type = MaterialType.SHADER
+    mat.sollum_game_type = game
     mat.use_nodes = True
     mat.shader_properties.name = base_name
     mat.shader_properties.filename = filename

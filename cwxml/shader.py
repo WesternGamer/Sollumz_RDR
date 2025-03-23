@@ -316,9 +316,9 @@ class ShaderDef(ElementTree):
                     elif current_semantic != this_semantic:
                         current_semantic = this_semantic
                         count = -1
-                    
+
                     entry = VERT_ATTR_DTYPES[this_semantic].copy()
-                    
+
                     if count == -1 and entry[0] in ("Colour", "TexCoord"):
                         entry[0] = entry[0] + "0"
                     elif count >= 0:
@@ -327,7 +327,6 @@ class ShaderDef(ElementTree):
                         tangents.add(entry[0])
                     count += 1
             return tangents
-            
 
     @property
     def required_normal(self):
@@ -339,40 +338,60 @@ class ShaderDef(ElementTree):
     @property
     def used_texcoords(self) -> set[str]:
         names = set()
-        for layout in self.layouts:
-            for field_name in layout.value:
-                if "TexCoord" in field_name:
-                    names.add(field_name)
+        if current_game == SollumzGame.GTA:
+            for layout in self.layouts:
+                for field_name in layout.value:
+                    if "TexCoord" in field_name:
+                        names.add(field_name)
+        elif current_game == SollumzGame.RDR:
+            num_texcoords = max(semantic.count("T") for semantic in self.semantics.values)
+            for i in range(num_texcoords):
+                names.add(f"TexCoord{i}")
 
         return names
 
     @property
     def used_texcoords_indices(self) -> set[int]:
         indices = set()
-        for layout in self.layouts:
-            for field_name in layout.value:
-                if "TexCoord" in field_name:
-                    indices.add(int(field_name[8:]))
+        if current_game == SollumzGame.GTA:
+            for layout in self.layouts:
+                for field_name in layout.value:
+                    if "TexCoord" in field_name:
+                        indices.add(int(field_name[8:]))
+        elif current_game == SollumzGame.RDR:
+            num_texcoords = max(semantic.count("T") for semantic in self.semantics.values)
+            for i in range(num_texcoords):
+                indices.add(i)
 
         return indices
 
     @property
     def used_colors(self) -> set[str]:
         names = set()
-        for layout in self.layouts:
-            for field_name in layout.value:
-                if "Colour" in field_name:
-                    names.add(field_name)
+        if current_game == SollumzGame.GTA:
+            for layout in self.layouts:
+                for field_name in layout.value:
+                    if "Colour" in field_name:
+                        names.add(field_name)
+        elif current_game == SollumzGame.RDR:
+            num_colors = max(semantic.count("C") for semantic in self.semantics.values)
+            for i in range(num_colors):
+                names.add(f"Colour{i}")
 
         return names
 
     @property
     def used_colors_indices(self) -> set[int]:
         indices = set()
-        for layout in self.layouts:
-            for field_name in layout.value:
-                if "Colour" in field_name:
-                    indices.add(int(field_name[6:]))
+        if current_game == SollumzGame.GTA:
+            for layout in self.layouts:
+                for field_name in layout.value:
+                    if "Colour" in field_name:
+                        indices.add(int(field_name[6:]))
+        elif current_game == SollumzGame.RDR:
+            num_colors = max(semantic.count("C") for semantic in self.semantics.values)
+            for i in range(num_colors):
+                indices.add(i)
 
         return indices
 

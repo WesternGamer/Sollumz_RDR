@@ -535,6 +535,13 @@ def register():
         options={"HIDDEN"}
     )
 
+    bpy.types.Material.sollum_game_type = bpy.props.EnumProperty(
+        items=items_from_enums(SollumzGame),
+        name="Sollumz Game",
+        default=SollumzGame.GTA,
+        options={"HIDDEN"}
+    )
+
     bpy.types.ShaderNode.is_sollumz = bpy.props.BoolProperty(default=False)
 
     bpy.types.Object.entity_properties = bpy.props.PointerProperty(

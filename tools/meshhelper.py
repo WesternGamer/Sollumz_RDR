@@ -191,7 +191,7 @@ def get_tangent_required(material: bpy.types.Material):
 
     shader_name = material.shader_properties.filename
 
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader is None:
         return False
 
@@ -205,7 +205,7 @@ def get_used_texcoords(material: bpy.types.Material) -> set[str]:
 
     shader_name = material.shader_properties.filename
 
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader is None:
         return set()
 
@@ -219,7 +219,7 @@ def get_used_texcoords_indices(material: bpy.types.Material) -> set[int]:
 
     shader_name = material.shader_properties.filename
 
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader is None:
         return set()
 
@@ -239,7 +239,7 @@ def get_used_colors(material: bpy.types.Material) -> set[str]:
 
     shader_name = material.shader_properties.filename
 
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader is None:
         return set()
 
@@ -253,7 +253,7 @@ def get_used_colors_indices(material: bpy.types.Material) -> set[int]:
 
     shader_name = material.shader_properties.filename
 
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader is None:
         return set()
 
@@ -369,7 +369,7 @@ def get_normal_required(material: bpy.types.Material):
 
     shader_name = material.shader_properties.filename
 
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader is None:
         return False
 
