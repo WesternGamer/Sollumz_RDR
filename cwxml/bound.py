@@ -237,7 +237,8 @@ class BoundGeometry(BoundChild):
 
     def __init__(self):
         super().__init__()
-        self.geometry_center = VectorProperty("GeometryCenter")
+        if current_game() == SollumzGame.GTA:
+            self.geometry_center = VectorProperty("GeometryCenter")
         # These unks are just padding, we can ignore them
         # self.unk_float_1 = ValueProperty("UnkFloat1")
         # self.unk_float_2 = ValueProperty("UnkFloat2")

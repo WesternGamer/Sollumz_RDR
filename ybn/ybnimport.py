@@ -30,6 +30,7 @@ from ..tools.meshhelper import (
     create_capsule,
     create_disc,
     create_color_attr,
+    get_bound_center_from_bounds,
 )
 from ..tools.utils import get_direction_of_vectors, get_distance_of_vectors, abs_vector
 from ..tools.blenderhelper import create_blender_object, create_empty_object
@@ -289,7 +290,8 @@ def create_bvh_polys(bvh: BoundGeometryBVH, materials: list[bpy.types.Material],
                 continue
 
             poly_obj = poly_to_obj(poly, materials, bvh.vertices)
-            poly_obj.location += bvh.geometry_center
+            geom_center = get_bound_center_from_bounds(bvh.box_min, bvh.box_max)
+            poly_obj.location += geom_center
             poly_obj.parent = bvh_obj
 
 
