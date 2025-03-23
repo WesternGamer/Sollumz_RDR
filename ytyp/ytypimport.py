@@ -230,21 +230,24 @@ def create_extension(extension_xml: ymapxml.Extension, extensions_container: Ext
     set_extension_props(extension_xml, extension)
 
     if extension_type == ExtensionType.LIGHT_EFFECT and not extensions_container.IS_ARCHETYPE:
-        # Create the light objects from this light effect extension
-        obj = extensions_container.linked_object
-        armature_obj = obj if obj is not None and obj.type == "ARMATURE" else None
+        if current_game() == SollumzGame.GTA:
+            # Create the light objects from this light effect extension
+            obj = extensions_container.linked_object
+            armature_obj = obj if obj is not None and obj.type == "ARMATURE" else None
 
-        from ..ydr.lights import create_light_instance_objs
-        lights_parent_obj = create_light_instance_objs(extension_xml.instances, armature_obj)
-        lights_parent_obj.name = f"{extensions_container.archetype_name}.light_effect"
-        if obj is not None:
-            # Constraint instead of parenting for a simpler hierarchy
-            # Also this way we don't need to distinguish between original lights and light effect lights.
-            # Original ones will always be the lights children of the object.
-            constraint = lights_parent_obj.constraints.new("COPY_TRANSFORMS")
-            constraint.target = obj
+            from ..ydr.lights import create_light_instance_objs
+            lights_parent_obj = create_light_instance_objs(extension_xml.instances, armature_obj)
+            lights_parent_obj.name = f"{extensions_container.archetype_name}.light_effect"
+            if obj is not None:
+                # Constraint instead of parenting for a simpler hierarchy
+                # Also this way we don't need to distinguish between original lights and light effect lights.
+                # Original ones will always be the lights children of the object.
+                constraint = lights_parent_obj.constraints.new("COPY_TRANSFORMS")
+                constraint.target = obj
 
-        extension.light_effect_properties.linked_lights_object = lights_parent_obj
+            extension.light_effect_properties.linked_lights_object = lights_parent_obj
+        else:
+            print("Skipping light extension creation... WIP!!")
 
     return extension
 
