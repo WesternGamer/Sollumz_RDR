@@ -436,23 +436,6 @@ def on_blend_file_loaded(_):
     refresh_ui_collections()
 
 
-def updateCollisionMaterialList(self, context):
-    sollum_game_type = context.scene.sollum_collision_material_game_type
-    materials = collisionmats
-    game = "sollumz_gta5"
-
-    context.window_manager.sz_collision_materials.clear()
-    if sollum_game_type == SollumzGame.RDR:
-        materials = rdr_collisionmats
-        game = "sollumz_rdr3"
-
-    for index, mat in enumerate(materials):
-        item = context.window_manager.sz_collision_materials.add()
-        item.index = index
-        item.name = mat.name
-        item.game = game
-
-
 def register():
     bpy.types.Object.bound_properties = bpy.props.PointerProperty(type=BoundProperties)
     bpy.types.Object.sz_bound_shape = bpy.props.PointerProperty(type=BoundShapeProps)
@@ -473,7 +456,7 @@ def register():
         description="Hidden property used to sync with global game selection",
         default=SollumzGame.GTA,
         options={"HIDDEN"},
-        update=updateCollisionMaterialList
+        update=lambda s, c: load_collision_materials(),
     )
 
     bpy.types.WindowManager.sz_flag_preset_index = bpy.props.IntProperty(name="Flag Preset Index")

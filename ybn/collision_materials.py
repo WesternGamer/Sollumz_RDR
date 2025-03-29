@@ -438,7 +438,7 @@ def collision_material_shader_expr(r: float, g: float, b: float) -> expr.ShaderE
     )
 
 
-def create_collision_material_from_index(index: int) -> Material:
+def create_collision_material_from_index(index: int, game: SollumzGame) -> Material:
     game = bpy.context.scene.sollum_collision_material_game_type
     matinfo = collisionmats[0]
 
@@ -462,10 +462,15 @@ def create_collision_material_from_index(index: int) -> Material:
     return mat
 
 
-def create_collision_material_from_name(name: str):
+def create_collision_material_from_name(name: str, game: SollumzGame):
     matinfo_index = None
 
-    for i, mat in enumerate(rdr_collisionmats):
+    if game == SollumzGame.GTA:
+        mats = collisionmats
+    elif game == SollumzGame.RDR:
+        mats = rdr_collisionmats
+
+    for i, mat in enumerate(mats):
         if mat.name.lower() == name.lower():
             matinfo_index = i
             break
@@ -474,5 +479,5 @@ def create_collision_material_from_name(name: str):
             f"Invalid material '{name}'! Setting to default...")
         matinfo_index = 0
 
-    return create_collision_material_from_index(matinfo_index)
+    return create_collision_material_from_index(matinfo_index, game)
 

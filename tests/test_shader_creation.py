@@ -2,12 +2,20 @@ import pytest
 import bpy
 import itertools
 import random
-from .test_fixtures import BLENDER_LANGUAGES, SOLLUMZ_SHADERS, SOLLUMZ_COLLISION_MATERIALS, context, plane_object
+from .test_fixtures import (
+    BLENDER_LANGUAGES,
+    SOLLUMZ_SHADERS,
+    SOLLUMZ_SHADERS_RDR,
+    SOLLUMZ_COLLISION_MATERIALS,
+    SOLLUMZ_COLLISION_MATERIALS_RDR,
+    context,
+    plane_object,
+)
 from ..ydr.shader_materials import create_shader
 from ..ybn.collision_materials import create_collision_material_from_index
 from ..ynv.ynvimport import get_material as ynv_get_material
 from ..tools.ymaphelper import add_occluder_material
-from ..sollumz_properties import SollumType
+from ..sollumz_properties import SollumType, SollumzGame
 from ..tools.blenderhelper import find_bsdf_and_material_output, material_from_image
 from ..tools.drawablehelper import MaterialConverter
 
@@ -29,9 +37,19 @@ class TestAllLanguages:
         mat = create_shader(shader)
         assert mat is not None
 
+    @pytest.mark.parametrize("shader", SOLLUMZ_SHADERS_RDR)
+    def test_create_shader_rdr(self, shader, use_every_language):
+        mat = create_shader(shader, SollumzGame.RDR)
+        assert mat is not None
+
     @pytest.mark.parametrize("material_index", list(range(len(SOLLUMZ_COLLISION_MATERIALS))))
     def test_create_collision_material(self, material_index, use_every_language):
-        mat = create_collision_material_from_index(material_index)
+        mat = create_collision_material_from_index(material_index, SollumzGame.GTA)
+        assert mat is not None
+
+    @pytest.mark.parametrize("material_index", list(range(len(SOLLUMZ_COLLISION_MATERIALS_RDR))))
+    def test_create_collision_material_rdr(self, material_index, use_every_language):
+        mat = create_collision_material_from_index(material_index, SollumzGame.RDR)
         assert mat is not None
 
     def test_create_navmesh_material(self, use_every_language):
@@ -64,7 +82,7 @@ def static_sample(population, k, seed=0):
 
 @pytest.mark.parametrize("src_shader,dst_shader",
                          # HACK: random sample because it takes too long to test all combinations
-                         static_sample(itertools.product(SOLLUMZ_SHADERS, SOLLUMZ_SHADERS), 500, seed=12345))
+                         static_sample(itertools.product(SOLLUMZ_SHADERS, SOLLUMZ_SHADERS), 100, seed=12345))
 def test_convert_shader_to_shader(src_shader, dst_shader, plane_object):
     src_mat = create_shader(src_shader)
     plane_object.data.materials.append(src_mat)

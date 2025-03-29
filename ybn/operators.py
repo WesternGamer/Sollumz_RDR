@@ -188,8 +188,23 @@ class SOLLUMZ_OT_create_bound(bpy.types.Operator):
 
 
 class CreateCollisionMatHelper:
+    @classmethod
+    def poll(cls, context):
+        selected = context.selected_objects
+        if not selected:
+            cls.poll_message_set("No objects selected.")
+            return False
+
+        scene_game = bpy.context.scene.sollum_collision_material_game_type
+        obj_game = selected[0].sollum_game_type
+        if obj_game != scene_game:
+            cls.poll_message_set(f"Cannot add {SOLLUMZ_UI_NAMES[scene_game]} material to {SOLLUMZ_UI_NAMES[obj_game]} object.")
+            return False
+
+        return True
+
     def create_material(self, mat_index: int, obj: bpy.types.Object):
-        mat = create_collision_material_from_index(mat_index)
+        mat = create_collision_material_from_index(mat_index, obj.sollum_game_type)
         obj.data.materials.append(mat)
 
         self.report(
@@ -203,10 +218,11 @@ class CreateCollisionMatHelper:
 
             return {"CANCELLED"}
 
+        game = bpy.context.scene.sollum_collision_material_game_type
         mat_index = context.window_manager.sz_collision_material_index
 
         for obj in selected:
-            if obj.type != "MESH":
+            if obj.type != "MESH" or obj.sollum_game_type != game:
                 continue
             self.create_material(mat_index, obj)
 
@@ -235,7 +251,7 @@ class SOLLUMZ_OT_convert_non_collision_materials_to_selected(CreateCollisionMatH
     bl_label = "Convert Non-Collision Materials To Selected"
 
     def create_material(self, mat_index: int, obj: bpy.types.Object):
-        mat = create_collision_material_from_index(mat_index)
+        mat = create_collision_material_from_index(mat_index, obj.sollum_game_type)
 
         for i, material in enumerate(obj.data.materials):
             if material.sollum_type == MaterialType.COLLISION:
@@ -250,6 +266,21 @@ class SOLLUMZ_OT_convert_to_collision_material(SOLLUMZ_OT_base, bpy.types.Operat
     bl_label = "Convert To Selected"
     bl_action = f"{bl_label}"
 
+    @classmethod
+    def poll(cls, context):
+        aobj = context.active_object
+        if not aobj:
+            cls.poll_message_set("No object selected.")
+            return False
+
+        scene_game = bpy.context.scene.sollum_collision_material_game_type
+        obj_game = aobj.sollum_game_type
+        if obj_game != scene_game:
+            cls.poll_message_set(f"Cannot add {SOLLUMZ_UI_NAMES[scene_game]} material to {SOLLUMZ_UI_NAMES[obj_game]} object.")
+            return False
+
+        return True
+
     def run(self, context):
         aobj = context.active_object
         if not aobj:
@@ -261,7 +292,7 @@ class SOLLUMZ_OT_convert_to_collision_material(SOLLUMZ_OT_base, bpy.types.Operat
             self.message("No material selected!")
             return False
 
-        mat = create_collision_material_from_index(context.window_manager.sz_collision_material_index)
+        mat = create_collision_material_from_index(context.window_manager.sz_collision_material_index, aobj.sollum_game_type)
         active_mat_index = aobj.active_material_index
         aobj.data.materials[active_mat_index] = mat
 

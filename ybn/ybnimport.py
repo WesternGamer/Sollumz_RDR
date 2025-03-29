@@ -233,9 +233,9 @@ def create_geometry_materials(geometry: BoundGeometryBVH):
     for mat_xml in geometry.materials:
         mat = None
         if current_game() == SollumzGame.GTA:
-            mat = create_collision_material_from_index(mat_xml.type)
+            mat = create_collision_material_from_index(mat_xml.type, SollumzGame.GTA)
         elif current_game() == SollumzGame.RDR:
-            mat = create_collision_material_from_name(mat_xml.name)
+            mat = create_collision_material_from_name(mat_xml.name, SollumzGame.RDR)
 
         if mat is None:
             raise Exception("Unable to create a valid collision material...")
