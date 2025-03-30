@@ -600,11 +600,12 @@ def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA, in_place_m
     create_uv_map_nodes(builder)
 
     if shader.is_terrain:
-        create_terrain_shader(builder)
+        if game == SollumzGame.GTA:
+            create_terrain_shader(builder)
+        elif game == SollumzGame.RDR:
+             RDR_create_terrain_shader(builder)
     elif filename in ShaderManager.rdr_standard_2lyr:
          RDR_create_2lyr_shader(builder)
-    elif filename in ShaderManager.rdr_terrains:
-         RDR_create_terrain_shader(builder)
     else:
         if game == SollumzGame.GTA:
             create_basic_shader_nodes(builder)

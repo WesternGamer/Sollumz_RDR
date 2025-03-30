@@ -8447,6 +8447,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_3+1lyr_snow_dm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>320 32</BufferSizes>
     <Params>
@@ -8514,6 +8515,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>320 32</BufferSizes>
     <Params>
@@ -8579,6 +8581,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>32 336</BufferSizes>
     <Params>
@@ -8642,6 +8645,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_mud</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>32 384</BufferSizes>
     <Params>
@@ -8711,6 +8715,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_mud_dm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>32 384</BufferSizes>
     <Params>
@@ -8782,6 +8787,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_pxm</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>368 32</BufferSizes>
     <Params>
@@ -8852,6 +8858,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_pxm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>32 384</BufferSizes>
     <Params>
@@ -8921,6 +8928,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_quicksand_dm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>32 336</BufferSizes>
     <Params>
@@ -8989,6 +8997,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_snow_dm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>320 32</BufferSizes>
     <Params>
@@ -9055,6 +9064,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_snowglt_pxm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>368 32</BufferSizes>
     <Params>
@@ -9120,6 +9130,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_snowglt_spx_dm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>368 32</BufferSizes>
     <Params>
@@ -9187,6 +9198,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_spx_dm_hbb</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>384 32</BufferSizes>
     <Params>
@@ -9256,6 +9268,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_spx_dm_hbb_1111</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>384 32</BufferSizes>
     <Params>
@@ -9327,6 +9340,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_spx_dm_hbb_1121</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>384 32</BufferSizes>
     <Params>
@@ -9398,6 +9412,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_spx_dm_hbb_1221</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>384 32</BufferSizes>
     <Params>
@@ -9469,6 +9484,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_spx_dm_hbb_2111</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>384 32</BufferSizes>
     <Params>
@@ -9538,6 +9554,7 @@
   </Item>
   <Item>
     <Name>terrain_uber_4lyr_spx_dm_hbb_2221</Name>
+    <Flags>IS_TERRAIN</Flags>
     <DrawBucket>00</DrawBucket>
     <BufferSizes>384 32</BufferSizes>
     <Params>

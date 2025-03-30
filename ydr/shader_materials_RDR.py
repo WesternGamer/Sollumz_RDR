@@ -93,26 +93,24 @@ def RDR_create_basic_shader_nodes(b: ShaderBuilder):
     # shader nodes on the specific shaders that use it
     use_palette = diffpal is not None and filename in ShaderManager.palette_shaders
 
-    use_decal = True if filename in ShaderManager.tinted_shaders() else False
+    use_decal = shader.is_alpha or shader.is_decal or shader.is_cutout
     decalflag = 0
     blend_mode = "OPAQUE"
     if use_decal:
         # set blend mode
-        if filename in ShaderManager.cutout_shaders():
+        if shader.is_cutout:
             blend_mode = "CLIP"
         else:
             blend_mode = "BLEND"
             decalflag = 1
         # set flags
-        if filename in [ShaderManager.decals[20]]:  # decal_dirt.sps
-            # txt_alpha_mask = ?
-            decalflag = 2
-        # decal_normal_only.sps / mirror_decal.sps / reflect_decal.sps
-        elif filename in [ShaderManager.decals[4], ShaderManager.decals[21], ShaderManager.decals[19]]:
-            decalflag = 3
-        # decal_spec_only.sps / spec_decal.sps
-        elif filename in [ShaderManager.decals[3], ShaderManager.decals[17]]:
-            decalflag = 4
+        # TODO: materials for different types of RDR decal shaders, these are GTA shaders
+        #if filename == "decal_dirt.sps":
+        #    decalflag = 2
+        #elif filename in {"decal_normal_only.sps", "mirror_decal.sps", "reflect_decal.sps"}:
+        #    decalflag = 3
+        #elif filename in {"decal_spec_only.sps", "spec_decal.sps"}:
+        #    decalflag = 4
 
     # is_emissive = True if filename in ShaderManager.em_shaders else False
 
@@ -159,7 +157,10 @@ def RDR_create_basic_shader_nodes(b: ShaderBuilder):
     # link value parameters
     link_value_shader_parameters(b)
 
-    mat.blend_method = blend_mode
+    if bpy.app.version < (4, 2, 0):
+        mat.blend_method = blend_mode
+    else:
+        mat.surface_render_method = "BLENDED" if blend_mode != "OPAQUE" else "DITHERED"
 
 
 def link_specular(b: ShaderBuilder, spctex):
@@ -471,7 +472,7 @@ def RDR_create_terrain_shader(b: ShaderBuilder):
         mixns.append(mix)
 
     seprgb = node_tree.nodes.new("ShaderNodeSeparateRGB")
-    if filename in ShaderManager.mask_only_terrains:
+    if shader.is_terrain_mask_only:
         links.new(tm.outputs[0], seprgb.inputs[0])
     else:
         # attr_c1 = node_tree.nodes.new("ShaderNodeAttribute")
