@@ -311,6 +311,7 @@ class SOLLUMZ_OT_delete_flag_preset(SOLLUMZ_OT_base, bpy.types.Operator):
         "Stair plane",
         "Stair mesh",
         "Deep surface",
+        "Horse Avoidance",
     ]
 
     def run(self, context):
