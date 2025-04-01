@@ -20,6 +20,7 @@ import ast
 from typing import Any
 from configparser import ConfigParser
 from typing import Optional
+from .sollumz_properties import SollumzGame, items_from_enums, set_import_export_current_game
 
 PREFS_FILE_NAME = "sollumz_rdr_prefs.ini"
 
@@ -346,6 +347,14 @@ class SollumzAddonPreferences(AddonPreferences):
         update=_save_preferences_on_update
     )
 
+    default_game: bpy.props.EnumProperty(
+        items=items_from_enums(SollumzGame),
+        name="Default game:",
+        description="Sets the game with which Blender will start",
+        default=SollumzGame.GTA,
+        update=_save_preferences_on_update
+    )
+
     shared_textures_directories: CollectionProperty(
         name="Shared Textures",
         type=SzSharedTexturesDirectory,
@@ -423,6 +432,7 @@ class SollumzAddonPreferences(AddonPreferences):
         layout.prop(self, "extra_color_swatches")
         layout.prop(self, "sollumz_icon_header")
         layout.prop(self, "use_text_name_as_mat_name")
+        layout.prop(self, "default_game")
         layout.prop(self, "shader_preset_apply_textures")
 
         from .sollumz_ui import draw_list_with_add_remove
@@ -522,6 +532,9 @@ def _load_preferences():
         else:
             config_dict[section] = dict(config[section])
 
+    if "default_game" in config_dict:
+        set_import_export_current_game(config_dict["default_game"])
+
     _update_bpy_struct_from_dict(addon_prefs, config_dict, eval_strings=True)
 
 
@@ -547,7 +560,7 @@ def _update_bpy_struct_from_dict(struct: bpy_struct, values: dict, eval_strings:
         if value is None:
             continue
 
-        if eval_strings and isinstance(value, str):
+        if eval_strings and isinstance(value, str) and key != "default_game":
             value = ast.literal_eval(value)
 
         prop = getattr(struct, key)
