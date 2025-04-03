@@ -12,6 +12,7 @@ from ...shared.multiselection import (
     MultiSelectUIFlagsPanel,
 )
 from ..operators import ytyp as ytyp_ops
+from ...sollumz_properties import SollumzGame
 
 
 def entities_filter_items(
@@ -212,6 +213,8 @@ class SOLLUMZ_PT_MLO_ENTITY_PANEL(MloEntityChildTabPanel, bpy.types.Panel):
 
         for prop_name in EntityProperties.__annotations__:
             if prop_name == "flags":
+                continue
+            elif get_selected_ytyp(context).game == SollumzGame.GTA and prop_name in ["blend_age_layer", "blend_age_dirt"]:
                 continue
             layout.prop(selection, prop_name)
 

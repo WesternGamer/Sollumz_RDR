@@ -42,8 +42,7 @@ class BaseArchetype(ElementTree):
         self.lod_dist = ValueProperty("lodDist")
         self.flags = ValueProperty("flags")
         self.avoidanceflags = ValueProperty("avoidanceflags")
-        if current_game() == SollumzGame.RDR:
-            self.special_attribute = ValueProperty("specialAttribute")
+        self.special_attribute = ValueProperty("specialAttribute")
         self.bb_min = VectorProperty("bbMin")
         self.bb_max = VectorProperty("bbMax")
         self.bs_center = VectorProperty("bsCentre")

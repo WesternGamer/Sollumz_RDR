@@ -104,6 +104,9 @@ def entity_from_obj(obj):
     entity.artificial_ambient_occlusion = int(
         obj.entity_properties.artificial_ambient_occlusion)
     entity.tint_value = int(obj.entity_properties.tint_value)
+    if current_game() == SollumzGame.RDR:
+        entity.blend_age_layer = int(obj.entity_properties.blend_age_layer)
+        entity.blend_age_dirt = int(obj.entity_properties.blend_age_dirt)
 
     return entity
 
