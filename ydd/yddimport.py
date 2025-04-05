@@ -93,7 +93,7 @@ def RDR_create_ydd_obj_ext_skel(ydd_xml: DrawableDictionary, filepath: str, exte
             ydd_armature_obj = create_blender_object(
                 SollumType.DRAWABLE_DICTIONARY, f"drawable_skeleton_{drawable_index}", armature, SollumzGame.RDR)
 
-            create_drawable_skel(drawable_xml, ydd_armature_obj)
+            create_drawable_skel(drawable_xml.skeleton, ydd_armature_obj)
             ydd_armature_obj.parent = skeletons_collection_empty
 
         for index, extra_skeleton_xml in enumerate(drawable_xml.extra_skeletons):
@@ -410,7 +410,7 @@ def create_armature_parent(name: str, skel_yft: Fragment, game: SollumzGame = So
     dict_obj = create_blender_object(
         SollumType.DRAWABLE_DICTIONARY, name, armature, game)
 
-    create_drawable_skel(skel_yft.drawable, dict_obj)
+    create_drawable_skel(skel_yft.drawable.skeleton, dict_obj)
 
     if current_game() == SollumzGame.GTA:
         rot_limits = skel_yft.drawable.joints.rotation_limits

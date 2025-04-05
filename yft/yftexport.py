@@ -1120,10 +1120,10 @@ def set_lod_xml_properties(lod_props: LODProperties, lod_xml: PhysicsLOD):
 
 def set_archetype_xml_properties(archetype_props: FragArchetypeProperties, arch_xml: Archetype, frag_name: str):
     arch_xml.name = frag_name
-    arch_xml.unknown_48 = archetype_props.gravity_factor
-    arch_xml.unknown_4c = archetype_props.max_speed
-    arch_xml.unknown_50 = archetype_props.max_ang_speed
-    arch_xml.unknown_54 = archetype_props.buoyancy_factor
+    arch_xml.gravity_factor = archetype_props.gravity_factor
+    arch_xml.max_speed = archetype_props.max_speed
+    arch_xml.max_ang_speed = archetype_props.max_ang_speed
+    arch_xml.buoyancy_factor = archetype_props.buoyancy_factor
 
 
 def set_group_xml_properties(group_props: GroupProperties, group_xml: PhysicsGroup):

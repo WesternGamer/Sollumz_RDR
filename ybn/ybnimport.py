@@ -54,7 +54,7 @@ def create_bound_composite(composite_xml: BoundComposite, name: Optional[str] = 
     obj.sollum_game_type = current_game()
 
     for child in composite_xml.children:
-        child_obj = create_bound_object(child)
+        child_obj = create_bound_object(child, current_game())
 
         if child_obj is None:
             continue
@@ -81,7 +81,7 @@ def create_rdr_bound(bound_xml: RDRBoundFile, name: Optional[str] = None):
     return obj 
 
 
-def create_bound_object(bound_xml: BoundChild | Bound, game: SollumzGame= SollumzGame.GTA):
+def create_bound_object(bound_xml: BoundChild | Bound, game: SollumzGame):
     """Create a bound object based on ``bound_xml.type``"""
     set_import_export_current_game(game)
     if bound_xml.type == "Box":

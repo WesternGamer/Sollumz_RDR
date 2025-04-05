@@ -85,7 +85,8 @@ def split_model_by_group(model_data: ModelData, bones: list[Bone]) -> list[Model
         model_datas.append(ModelData(
             mesh_data_lods=mesh_data_lods,
             xml_lods=model_data.xml_lods,
-            bone_index=i
+            bone_index=i,
+            bone_mapping=model_data.bone_mapping,
         ))
 
     return model_datas

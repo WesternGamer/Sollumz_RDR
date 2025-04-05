@@ -24,7 +24,6 @@ from ..ydr import ydrimport
 
 
 def import_yft(filepath: str):
-    raise Exception("Fragment import has been disabled as it's Work In Progress")
     import_settings = get_import_settings()
 
     if is_hi_yft_filepath(filepath):
@@ -97,25 +96,24 @@ def create_fragment_obj(frag_xml: Fragment, filepath: str, name: Optional[str] =
                 _update_mat_paint_name(mat)
 
     drawable_obj = create_fragment_drawable(frag_xml, frag_obj, filepath, materials, split_by_group)
-    # damaged_drawable_obj = create_fragment_drawable(
-    #     frag_xml, frag_obj, filepath, materials, split_by_group, damaged=True)
+    damaged_drawable_obj = create_fragment_drawable(frag_xml, frag_obj, filepath, materials, split_by_group, damaged=True)
 
-    # create_frag_collisions(frag_xml, frag_obj)
-    # if damaged_drawable_obj is not None:
-    #     create_frag_collisions(frag_xml, frag_obj, damaged=True)
-    #
-    #     if frag_xml.physics.lod1.damaged_archetype is not None:
-    #         a = frag_xml.physics.lod1.archetype
-    #         b = frag_xml.physics.lod1.damaged_archetype
-    #         # We assume that these archetype properties are the same in both the undamaged and damaged archetypes so the
-    #         # user only has to set them once in the UI
-    #         assert a.unknown_48 == b.unknown_48, "gravity_factor different in damaged archetype. Open an issue!"
-    #         assert a.unknown_4c == b.unknown_4c, "max_speed factor different in damaged archetype. Open an issue!"
-    #         assert a.unknown_50 == b.unknown_50, "max_ang_speed different in damaged archetype. Open an issue!"
-    #         assert a.unknown_54 == b.unknown_54, "buoyancy_factor different in damaged archetype. Open an issue!"
+    create_frag_collisions(frag_xml, frag_obj)
+    if damaged_drawable_obj is not None:
+        create_frag_collisions(frag_xml, frag_obj, damaged=True)
 
-    # create_phys_lod(frag_xml, frag_obj)
-    # set_all_bone_physics_properties(frag_obj.data, frag_xml)
+        if frag_xml.physics.lod1.damaged_archetype is not None:
+            a = frag_xml.physics.lod1.archetype
+            b = frag_xml.physics.lod1.damaged_archetype
+            # We assume that these archetype properties are the same in both the undamaged and damaged archetypes so the
+            # user only has to set them once in the UI
+            assert a.gravity_factor == b.gravity_factor, "gravity_factor different in damaged archetype. Open an issue!"
+            assert a.max_speed == b.max_speed, "max_speed factor different in damaged archetype. Open an issue!"
+            assert a.max_ang_speed == b.max_ang_speed, "max_ang_speed different in damaged archetype. Open an issue!"
+            assert a.buoyancy_factor == b.buoyancy_factor, "buoyancy_factor different in damaged archetype. Open an issue!"
+
+    create_phys_lod(frag_xml, frag_obj)
+    set_all_bone_physics_properties(frag_obj.data, frag_xml)
 
     # create_phys_child_meshes(frag_xml, frag_obj, drawable_obj, materials)
 
@@ -135,8 +133,7 @@ def create_frag_armature(frag_xml: Fragment, name: Optional[str] = None):
     """Create the fragment armature along with the bones and rotation limits."""
     name = name or frag_xml.name.replace("pack:/", "")
     drawable_xml = frag_xml.drawable
-    frag_obj = create_armature_obj_from_skel(
-        drawable_xml.skeleton, name, SollumType.FRAGMENT)
+    frag_obj = create_armature_obj_from_skel(drawable_xml.skeleton, name, SollumType.FRAGMENT)
     if current_game() == SollumzGame.GTA:
         create_joint_constraints(frag_obj, drawable_xml.joints)
 
@@ -163,7 +160,7 @@ def create_fragment_drawable(frag_xml: Fragment, frag_obj: bpy.types.Object, fil
         materials=materials,
         split_by_group=split_by_group,
         external_armature=frag_obj,
-        game=current_game,
+        game=current_game(),
     )
     drawable_obj.parent = frag_obj
 
@@ -214,7 +211,13 @@ def set_all_bone_physics_properties(armature: bpy.types.Armature, frag_xml: Frag
 
 def create_frag_collisions(frag_xml: Fragment, frag_obj: bpy.types.Object, damaged: bool = False) -> Optional[bpy.types.Object]:
     lod1 = frag_xml.physics.lod1
-    bounds_xml = lod1.damaged_archetype.bounds if damaged else lod1.archetype.bounds
+    if current_game() == SollumzGame.GTA:
+        bounds_xml = lod1.damaged_archetype.bounds if damaged else lod1.archetype.bounds
+    elif current_game() == SollumzGame.RDR:
+        if damaged:
+            # TODO: do separate damaged bounds exists in RDR?
+            return None
+        bounds_xml = lod1.bounds
 
     if bounds_xml is None or not bounds_xml.children:
         return None
@@ -228,7 +231,7 @@ def create_frag_collisions(frag_xml: Fragment, frag_obj: bpy.types.Object, damag
         if bound_xml is None:
             continue
 
-        bound_obj = create_bound_object(bound_xml)
+        bound_obj = create_bound_object(bound_xml, current_game())
         bound_obj.parent = composite_obj
 
         bone = find_bound_bone(i, frag_xml)
@@ -309,6 +312,10 @@ def create_phys_child_models(drawable_xml: Drawable, frag_obj: bpy.types.Object,
 
 
 def create_vehicle_windows(frag_xml: Fragment, frag_obj: bpy.types.Object, materials: list[bpy.types.Material]):
+    if current_game() == SollumzGame.RDR:
+        # TODO: RDR2 vehicle windows
+        return
+
     for window_xml in frag_xml.vehicle_glass_windows:
         window_bone = get_window_bone(
             window_xml, frag_xml, frag_obj.data.bones)
@@ -497,6 +504,10 @@ def get_geometry_material(drawable_xml: Drawable, materials: list[bpy.types.Mate
 
 def set_all_glass_window_properties(frag_xml: Fragment, frag_obj: bpy.types.Object):
     """Set the glass window properties for all bones in the fragment."""
+    if current_game() == SollumzGame.RDR:
+        # TODO: RDR2 fragment glass
+        return
+
     groups_xml: list[PhysicsGroup] = frag_xml.physics.lod1.groups
     glass_windows_xml: list[GlassWindow] = frag_xml.glass_windows
     armature: bpy.types.Armature = frag_obj.data
@@ -532,28 +543,39 @@ def set_fragment_properties(frag_xml: Fragment, frag_obj: bpy.types.Object):
 
 
 def set_lod_properties(lod_xml: PhysicsLOD, lod_props: LODProperties):
-    lod_props.min_move_force = lod_xml.unknown_1c
-    lod_props.unbroken_cg_offset = lod_xml.unknown_50
-    lod_props.damping_linear_c = lod_xml.damping_linear_c
-    lod_props.damping_linear_v = lod_xml.damping_linear_v
-    lod_props.damping_linear_v2 = lod_xml.damping_linear_v2
-    lod_props.damping_angular_c = lod_xml.damping_angular_c
-    lod_props.damping_angular_v = lod_xml.damping_angular_v
-    lod_props.damping_angular_v2 = lod_xml.damping_angular_v2
+    if current_game() == SollumzGame.GTA:
+        lod_props.min_move_force = lod_xml.unknown_1c
+        lod_props.unbroken_cg_offset = lod_xml.unknown_50
+        lod_props.damping_linear_c = lod_xml.damping_linear_c
+        lod_props.damping_linear_v = lod_xml.damping_linear_v
+        lod_props.damping_linear_v2 = lod_xml.damping_linear_v2
+        lod_props.damping_angular_c = lod_xml.damping_angular_c
+        lod_props.damping_angular_v = lod_xml.damping_angular_v
+        lod_props.damping_angular_v2 = lod_xml.damping_angular_v2
+    elif current_game() == SollumzGame.RDR:
+        lod_props.min_move_force = lod_xml.min_move_force
+        lod_props.unbroken_cg_offset = Vector()
+        lod_props.damping_linear_c = lod_xml.archetype.linear_c.xyz
+        lod_props.damping_linear_v = lod_xml.archetype.linear_v.xyz
+        lod_props.damping_linear_v2 = lod_xml.archetype.linear_v2.xyz
+        lod_props.damping_angular_c = lod_xml.archetype.angular_c.xyz
+        lod_props.damping_angular_v = lod_xml.archetype.angular_v.xyz
+        lod_props.damping_angular_v2 = lod_xml.archetype.angular_v2.xyz
 
 
 def set_archetype_properties(arch_xml: Archetype, arch_props: FragArchetypeProperties):
     arch_props.name = arch_xml.name
-    arch_props.gravity_factor = arch_xml.unknown_48
-    arch_props.max_speed = arch_xml.unknown_4c
-    arch_props.max_ang_speed = arch_xml.unknown_50
-    arch_props.buoyancy_factor = arch_xml.unknown_54
+    arch_props.gravity_factor = arch_xml.gravity_factor
+    arch_props.max_speed = arch_xml.max_speed
+    arch_props.max_ang_speed = arch_xml.max_ang_speed
+    arch_props.buoyancy_factor = arch_xml.buoyancy_factor
 
 
 def set_group_properties(group_xml: PhysicsGroup, bone: bpy.types.Bone):
     bone.group_properties.name = group_xml.name
-    for i in range(len(bone.group_properties.flags)):
-        bone.group_properties.flags[i] = (group_xml.glass_flags & (1 << i)) != 0
+    if current_game() == SollumzGame.GTA:
+        for i in range(len(bone.group_properties.flags)):
+            bone.group_properties.flags[i] = (group_xml.glass_flags & (1 << i)) != 0
     bone.group_properties.strength = group_xml.strength
     bone.group_properties.force_transmission_scale_up = group_xml.force_transmission_scale_up
     bone.group_properties.force_transmission_scale_down = group_xml.force_transmission_scale_down
@@ -566,18 +588,45 @@ def set_group_properties(group_xml: PhysicsGroup, bone: bpy.types.Bone):
     bone.group_properties.rotation_strength = group_xml.rotation_strength
     bone.group_properties.restoring_strength = group_xml.restoring_strength
     bone.group_properties.restoring_max_torque = group_xml.restoring_max_torque
-    bone.group_properties.latch_strength = group_xml.latch_strength
+    if current_game() == SollumzGame.GTA:
+        bone.group_properties.latch_strength = group_xml.latch_strength
+    elif current_game() == SollumzGame.RDR:
+        pass # TODO: RDR latch_strength physics group property, is it one of the unknowns or was it removed?
     bone.group_properties.min_damage_force = group_xml.min_damage_force
     bone.group_properties.damage_health = group_xml.damage_health
-    bone.group_properties.weapon_health = group_xml.unk_float_5c
-    bone.group_properties.weapon_scale = group_xml.unk_float_60
-    bone.group_properties.vehicle_scale = group_xml.unk_float_64
-    bone.group_properties.ped_scale = group_xml.unk_float_68
-    bone.group_properties.ragdoll_scale = group_xml.unk_float_6c
-    bone.group_properties.explosion_scale = group_xml.unk_float_70
-    bone.group_properties.object_scale = group_xml.unk_float_74
-    bone.group_properties.ped_inv_mass_scale = group_xml.unk_float_78
-    bone.group_properties.melee_scale = group_xml.unk_float_a8
+    if current_game() == SollumzGame.GTA:
+        # TODO: rename GTA phyiscs group properties to reduce code duplication with RDR
+        bone.group_properties.weapon_health = group_xml.unk_float_5c
+        bone.group_properties.weapon_scale = group_xml.unk_float_60
+        bone.group_properties.vehicle_scale = group_xml.unk_float_64
+        bone.group_properties.ped_scale = group_xml.unk_float_68
+        bone.group_properties.ragdoll_scale = group_xml.unk_float_6c
+        bone.group_properties.explosion_scale = group_xml.unk_float_70
+        bone.group_properties.object_scale = group_xml.unk_float_74
+        bone.group_properties.ped_inv_mass_scale = group_xml.unk_float_78
+        bone.group_properties.melee_scale = group_xml.unk_float_a8
+    elif current_game() == SollumzGame.RDR:
+        bone.group_properties.weapon_health = group_xml.weapon_health
+        bone.group_properties.weapon_scale = group_xml.weapon_scale
+        bone.group_properties.vehicle_scale = group_xml.vehicle_scale
+        bone.group_properties.ped_scale = group_xml.ped_scale
+        bone.group_properties.ragdoll_scale = group_xml.ragdoll_scale
+        bone.group_properties.explosion_scale = group_xml.explosion_scale
+        bone.group_properties.object_scale = group_xml.object_scale
+        bone.group_properties.ped_inv_mass_scale = group_xml.ped_inv_mass_scale
+        bone.group_properties.melee_scale = group_xml.melee_scale
+        # TODO: remaining RDR phyiscs group properties
+        # self.unknown_00
+        # self.unknown_01
+        # self.unknown_10
+        # self.unknown_2A
+        # self.unknown_2C
+        # self.unknown_2E
+        # self.unknown_30
+        # self.unknown_48
+        # self.unknown_4A
+        # self.unknown_4C
+        # self.unknown_4E
 
 
 def set_veh_window_properties(window_xml: Window, window_obj: bpy.types.Object):
