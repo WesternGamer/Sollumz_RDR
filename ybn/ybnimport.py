@@ -112,9 +112,9 @@ def create_bound_child_mesh(bound_xml: BoundChild, sollum_type: SollumType, mesh
 
     mat = None
     if current_game() == SollumzGame.GTA:
-        mat = create_collision_material_from_index(bound_xml.material_index)
+        mat = create_collision_material_from_index(bound_xml.material_index, SollumzGame.GTA)
     elif current_game() == SollumzGame.RDR:
-        mat = create_collision_material_from_name(bound_xml.material_name)
+        mat = create_collision_material_from_name(bound_xml.material_name, SollumzGame.RDR)
 
     set_bound_col_material_properties(bound_xml, mat)
     obj.data.materials.append(mat)
