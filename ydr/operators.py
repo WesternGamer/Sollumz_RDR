@@ -402,7 +402,7 @@ class SOLLUMZ_OT_delete_light_preset(SOLLUMZ_OT_base, bpy.types.Operator):
 
 def shader_preset_from_material(material: bpy.types.Material) -> ShaderPreset:
     preset = ShaderPreset()
-    shader_def = ShaderManager.find_shader(material.shader_properties.filename)
+    shader_def = ShaderManager.find_shader(material.shader_properties.filename, material.sollum_game_type)
 
     for node in material.node_tree.nodes:
         param_def = shader_def.parameter_map.get(node.name, None)
@@ -434,7 +434,7 @@ def shader_preset_from_material(material: bpy.types.Material) -> ShaderPreset:
 
 
 def shader_preset_apply_to_material(material: bpy.types.Material, preset: ShaderPreset, apply_textures: bool = True):
-    shader_def = ShaderManager.find_shader(material.shader_properties.filename)
+    shader_def = ShaderManager.find_shader(material.shader_properties.filename, material.sollum_game_type)
 
     for param in preset.params:
         param_def = shader_def.parameter_map.get(param.name, None)
@@ -703,7 +703,7 @@ class SOLLUMZ_OT_create_shader_material(SOLLUMZ_OT_base, bpy.types.Operator):
     bl_label = "Create Shader Material"
     bl_action = "Create a Shader Material"
 
-    shader_index: IntProperty(name="Shader Index", min=0, max=len(shadermats) - 1)
+    shader_index: IntProperty(name="Shader Index", min=0)
 
     def create_material(self, context, obj, shader_filename, game):
         if obj.type != "MESH":
@@ -744,7 +744,7 @@ class SOLLUMZ_OT_change_shader(SOLLUMZ_OT_base, bpy.types.Operator):
     bl_label = "Change Shader"
     bl_action = "Change Shader of Material"
 
-    shader_index: IntProperty(name="Shader Index", min=0, max=len(shadermats) - 1)
+    shader_index: IntProperty(name="Shader Index", min=0)
 
     @classmethod
     def poll(cls, context):
@@ -759,11 +759,15 @@ class SOLLUMZ_OT_change_shader(SOLLUMZ_OT_base, bpy.types.Operator):
     def run(self, context):
         aobj = context.active_object
         mat = aobj.active_material
+        game = mat.sollum_game_type
+        materials = shadermats
+        if game == SollumzGame.RDR:
+            materials = rdr_shadermats
         old_shader_filename = mat.shader_properties.filename
-        new_shader_filename = shadermats[self.shader_index].value
+        new_shader_filename = materials[self.shader_index].value
 
         tmp_preset = shader_preset_from_material(mat)
-        create_shader(new_shader_filename, in_place_material=mat)
+        create_shader(new_shader_filename, game, in_place_material=mat)
         shader_preset_apply_to_material(mat, tmp_preset, apply_textures=True)
 
         post_create_shader_add_default_images(mat)

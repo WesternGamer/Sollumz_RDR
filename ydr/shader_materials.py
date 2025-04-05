@@ -549,7 +549,7 @@ def create_shader(filename: str, game: SollumzGame = SollumzGame.GTA, in_place_m
         raise AttributeError(f"Shader '{filename}' does not exist!")
 
     filename = shader.filename  # in case `filename` was hashed initially
-    base_name = ShaderManager.find_shader_base_name(filename, game)
+    base_name = shader.base_name
     material_name = filename.replace(".sps", "")
 
     if in_place_material and in_place_material.use_nodes:

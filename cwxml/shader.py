@@ -16,14 +16,6 @@ from typing import Optional
 from enum import Enum, Flag, auto
 
 
-class FileNameList(ListProperty):
-    class FileName(TextProperty):
-        tag_name = "Item"
-
-    list_type = FileName
-    tag_name = "FileName"
-
-
 class LayoutList(ListProperty):
     class Layout(VertexLayoutList):
         tag_name = "Item"
@@ -279,15 +271,16 @@ class ShaderDef(ElementTree):
     def __init__(self, game: SollumzGame):
         super().__init__()
         self.game = game
+        self.preset_name = ""
+        self.base_name = ""
         if self.game == SollumzGame.RDR:
-            self.filename = TextProperty("Name")
             self.flags = ShaderDefFlagProperty()
             self.render_bucket = 0
+            self.render_bucket_flag = False
             self.buffer_size = []
             self.parameters = ShaderParameterDefsList("Params")
             self.semantics = SemanticsList()
         elif self.game == SollumzGame.GTA:
-            self.filename = TextProperty("Name", "")
             self.flags = ShaderDefFlagProperty()
             self.layouts = LayoutList()
             self.parameters = ShaderParameterDefsList("Parameters")
@@ -296,6 +289,11 @@ class ShaderDef(ElementTree):
         self.uv_maps = {}
         self.parameter_map = {}
         self.parameter_ui_order = {}
+
+    @property
+    def filename(self) -> str:
+        """Deprecated, use `preset_name` instead."""
+        return self.preset_name
 
     @property
     def required_tangent(self):
@@ -436,14 +434,14 @@ class ShaderDef(ElementTree):
 class ShaderManager:
     shaderxml = os.path.join(os.path.dirname(__file__), "Shaders.xml")
     rdr_shaderxml = os.path.join(os.path.dirname(__file__), "ModRDRShaders.xml")
-    # Map shader filenames to base shader names
-    _shaders_base_names: dict[ShaderDef, str] = {}
+
     _shaders: dict[str, ShaderDef] = {}
     _shaders_by_hash: dict[int, ShaderDef] = {}
+    _shaders_by_base_name_and_rb: dict[(str, int), ShaderDef] = {}
 
-    _rdr_shaders_base_names: dict[ShaderDef, str] = {}
     _rdr_shaders: dict[str, ShaderDef] = {}
     _rdr_shaders_by_hash: dict[int, ShaderDef] = {}
+    _rdr_shaders_by_base_name_and_rb: dict[(str, int), ShaderDef] = {}
 
     rdr_standard_2lyr = ["standard_2lyr", "standard_2lyr_ground", "standard_2lyr_pxm", "standard_2lyr_pxm_ground", "standard_2lyr_tnt", 
             "campfire_standard_2lyr"]
@@ -489,35 +487,63 @@ class ShaderManager:
                 render_bucket = int(filename_elem.attrib["bucket"])
 
                 shader = ShaderDef.from_xml(node, SollumzGame.GTA)
-                shader.filename = filename
+                shader.base_name = base_name
+                shader.preset_name = filename
                 shader.render_bucket = render_bucket
+
+                assert filename not in ShaderManager._shaders, f"Shader definition '{filename}' already registered"
                 ShaderManager._shaders[filename] = shader
                 ShaderManager._shaders_by_hash[filename_hash] = shader
-                ShaderManager._shaders_base_names[shader] = base_name
+                ShaderManager._shaders_by_base_name_and_rb[(base_name, render_bucket)] = shader
 
         for node in rdrtree.getroot():
             base_name = node.find("Name").text
 
-            filename_hash = jenkhash.Generate(base_name)
-            render_bucket = node.find("DrawBucket").text.split(" ")
-            if len(render_bucket) == 1:
-                render_bucket = int(render_bucket[0])
-            else:
-                render_bucket = [int(x) for x in render_bucket]
-            
             buffer_size = node.find("BufferSizes").text
             if buffer_size != None:
-                buffer_size = [int(x) for x in node.find("BufferSizes").text.split(" ")]
+                buffer_size = tuple(int(x) for x in node.find("BufferSizes").text.split(" "))
 
-            shader = ShaderDef.from_xml(node, SollumzGame.RDR)
-            shader.filename = base_name
-            shader.render_bucket = render_bucket
-            shader.buffer_size = buffer_size
-            ShaderManager._rdr_shaders[base_name] = shader
-            ShaderManager._rdr_shaders_by_hash[filename_hash] = shader
-            ShaderManager._rdr_shaders_base_names[shader] = base_name
-        print("\Loaded total RDR shaders:", len(ShaderManager._rdr_shaders))
-        print("\Loaded total GTA shaders:", len(ShaderManager._shaders))
+            render_bucket = node.find("DrawBucket").text.split(" ")
+            render_bucket = sorted([int(x, 16)  for x in render_bucket])
+            # Register a ShaderDef per render bucket, similar to how .sps files worked in GTA5
+            for rb in render_bucket:
+                preset_name = base_name
+                rb_flag = (rb & 0x80) != 0
+                rb &= 0x7F
+                if len(render_bucket) > 1:
+                    # If we have more than one render bucket, add a suffix to differentiate them
+                    # TODO: might want to match these names to the .sps found in the game files.
+                    #       Currently by just adding a suffix, they are close but not always the same.
+                    if rb == 0:
+                        suffix = ""
+                    elif rb == 1:
+                        suffix = "_alpha"
+                    elif rb == 2:
+                        suffix = "_decal"
+                    elif rb == 3:
+                        suffix = "_cutout"
+                    elif rb == 4:
+                        suffix = "_nosplash"
+                    elif rb == 5:
+                        suffix = "_nowater"
+                    else:
+                        assert "Unsupported render bucket for suffix"
+
+                    preset_name += suffix
+
+                preset_name_hash = jenkhash.Generate(preset_name)
+
+                shader = ShaderDef.from_xml(node, SollumzGame.RDR)
+                shader.base_name = base_name
+                shader.preset_name = preset_name
+                shader.render_bucket = rb
+                shader.render_bucket_flag = rb_flag
+                shader.buffer_size = buffer_size
+
+                assert preset_name not in ShaderManager._rdr_shaders, f"Shader definition '{preset_name}' already registered"
+                ShaderManager._rdr_shaders[preset_name] = shader
+                ShaderManager._rdr_shaders_by_hash[preset_name_hash] = shader
+                ShaderManager._rdr_shaders_by_base_name_and_rb[(base_name, rb)] = shader
 
 
     @staticmethod
@@ -533,14 +559,19 @@ class ShaderManager:
         return shader
 
     @staticmethod
-    def find_shader_base_name(filename: str, game: SollumzGame = SollumzGame.GTA) -> Optional[str]:
-        shader = ShaderManager.find_shader(filename, game)
-        if shader is None:
-            return None
+    def find_shader_preset_name(base_name: str, render_bucket: int, game: SollumzGame = SollumzGame.GTA) -> Optional[str]:
         if game == SollumzGame.GTA:
-            return ShaderManager._shaders_base_names[shader]
+            by_base_name_and_rb = ShaderManager._shaders_by_base_name_and_rb
+            by_preset_name = ShaderManager._shaders
         elif game == SollumzGame.RDR:
-            return ShaderManager._rdr_shaders_base_names[shader]
+            by_base_name_and_rb = ShaderManager._rdr_shaders_by_base_name_and_rb
+            by_preset_name = ShaderManager._rdr_shaders
+
+        shader = by_base_name_and_rb[(base_name, render_bucket)]
+        if shader is None:
+            shader = by_preset_name[base_name]
+
+        return shader.preset_name if shader is not None else None
 
 
 ShaderManager.load_shaders()

@@ -143,7 +143,11 @@ class ShaderProperties(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Shader Name", default="default")
 
     def get_ui_name(self) -> str:
-        s = shadermats_by_filename.get(self.filename, None)
+        game = self.id_data.sollum_game_type
+        if game == SollumzGame.GTA:
+            s = shadermats_by_filename.get(self.filename, None)
+        elif game == SollumzGame.RDR:
+            s = rdr_shadermats_by_filename.get(self.filename, None)
         return (s and s.ui_name) or ""
 
     ui_name: bpy.props.StringProperty(name="Shader", get=get_ui_name)
@@ -607,7 +611,7 @@ def register():
         update=lambda s, c: update_shader_list(),
     )
     bpy.types.WindowManager.sz_shader_material_index = bpy.props.IntProperty(
-        name="Shader Material Index", min=0, max=len(shadermats) - 1)
+        name="Shader Material Index", min=0)
     bpy.types.WindowManager.sz_shader_materials = bpy.props.CollectionProperty(
         type=ShaderMaterial, name="Shader Materials"
     )

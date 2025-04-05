@@ -1225,19 +1225,14 @@ def get_shaders_from_blender(materials):
     for material in materials:
         shader = Shader()
         shader.name = material.shader_properties.name
+        shader_def = ShaderManager.find_shader(material.shader_properties.filename, current_game())
         if current_game() == SollumzGame.GTA:
             shader.filename = material.shader_properties.filename
             shader.render_bucket = RenderBucket[material.shader_properties.renderbucket].value
-            shader_def = ShaderManager.find_shader(shader.filename)
             shader.parameters = create_shader_parameters_list_template(shader_def)
         elif current_game() == SollumzGame.RDR:
             shader.draw_bucket = RenderBucket[material.shader_properties.renderbucket].value
-            shader_def = ShaderManager.find_shader(shader.name, current_game())
-            shader_bucket = shader_def.render_bucket
-            if not isinstance(shader_bucket, int):
-                shader_bucket = shader_bucket[0]
-            shader_bucket = int(str(shader_bucket), 16)
-            shader.draw_bucket_flag = (shader_bucket & 0x80) != 0
+            shader.draw_bucket_flag = shader_def.render_bucket_flag
             shader.parameters = RDRParameters()
             shader.parameters.buffer_size = ' '.join([str(elem) for elem in shader_def.buffer_size])
             shader.parameters.items = create_shader_parameters_list_template(shader_def)

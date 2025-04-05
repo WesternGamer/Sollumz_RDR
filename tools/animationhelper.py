@@ -428,7 +428,7 @@ def add_global_anim_uv_drivers(material, x_dot_node, y_dot_node):
 
 def add_global_anim_uv_nodes(material: bpy.types.Materia):
     shader_name = material.shader_properties.filename
-    shader = ShaderManager.find_shader(shader_name)
+    shader = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     assert shader is not None
 
     tree = material.node_tree

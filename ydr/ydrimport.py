@@ -9,6 +9,7 @@ from .shader_materials import create_shader, get_detail_extra_sampler, create_ti
 from ..ybn.ybnimport import create_bound_composite, create_bound_object, create_rdr_bound
 from ..sollumz_properties import SollumzGame, SollumType, SOLLUMZ_UI_NAMES, import_export_current_game as current_game, set_import_export_current_game
 from ..sollumz_preferences import get_addon_preferences, get_import_settings
+from ..cwxml.shader import ShaderManager
 from ..cwxml.drawable import YDR, BoneLimit, Joints, Shader, ShaderGroup, Drawable, Bone, Skeleton, RotationLimit, DrawableModel, LodList
 from ..cwxml.bound import Bound
 from ..tools.blenderhelper import add_child_of_bone_constraint, create_empty_object, create_blender_object, join_objects, add_armature_modifier, parent_objs
@@ -312,8 +313,8 @@ def shader_item_to_material(shader: Shader, shader_group: ShaderGroup, filepath:
         material = create_shader(filename, current_game())
         material.shader_properties.renderbucket = RenderBucket(shader.render_bucket).name
     elif current_game() == SollumzGame.RDR:
-        filename = shader.name
-        material = create_shader(shader.name, current_game())
+        filename = ShaderManager.find_shader_preset_name(shader.name, shader.draw_bucket, current_game())
+        material = create_shader(filename, current_game())
         material.shader_properties.renderbucket = RenderBucket(shader.draw_bucket).name
     material.name = shader.name
 

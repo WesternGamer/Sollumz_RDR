@@ -92,7 +92,7 @@ def upgrade_material_old_shader_parameters(material: Material):
         return
 
     shader_name = material.shader_properties.filename
-    shader_def = ShaderManager.find_shader(shader_name)
+    shader_def = ShaderManager.find_shader(shader_name, material.sollum_game_type)
     if shader_def is None:
         return
 

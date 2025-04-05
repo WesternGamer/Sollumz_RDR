@@ -170,7 +170,6 @@ class TextureShaderParameter(ShaderParameter):
     def __init__(self):
         super().__init__()
 
-        print(f"TextureShaderParameter  {current_game()=}")
         if current_game() == SollumzGame.GTA:
             self.texture_name = TextProperty("Name")
         elif current_game() == SollumzGame.RDR:

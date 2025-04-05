@@ -752,19 +752,7 @@ class SOLLUMZ_PT_change_shader(bpy.types.Panel):
 
 def collect_parameter_nodes(mat: bpy.types.Material, filter_func) -> list[bpy.types.Node]:
     """Filters nodes from ``mat`` and sorts them based on ``ShaderDef.parameter_ui_order``."""
-    shader = ShaderManager.find_shader(mat.shader_properties.filename)
-
-    nodes = [n for n in mat.node_tree.nodes if filter_func(n)]
-    if shader is not None:
-        # order changes when the active node changes, sort so the UI stays stable
-        nodes = sorted(nodes, key=lambda n: shader.parameter_ui_order.get(n.name, -1))
-
-    return nodes
-
-
-def collect_parameter_nodes(mat: bpy.types.Material, filter_func) -> list[bpy.types.Node]:
-    """Filters nodes from ``mat`` and sorts them based on ``ShaderDef.parameter_ui_order``."""
-    shader = ShaderManager.find_shader(mat.shader_properties.filename)
+    shader = ShaderManager.find_shader(mat.shader_properties.filename, mat.sollum_game_type)
 
     nodes = [n for n in mat.node_tree.nodes if filter_func(n)]
     if shader is not None:
