@@ -17,6 +17,7 @@ from .element import (
     ElementProperty,
     Vector4Property,
 )
+from ..sollumz_properties import SollumzGame, import_export_current_game as current_game
 
 
 class YMAP:
@@ -429,6 +430,9 @@ class Entity(ElementTree):
         self.artificial_ambient_occlusion = ValueProperty(
             "artificialAmbientOcclusion", 0)
         self.tint_value = ValueProperty("tintValue", 0)
+        if current_game() == SollumzGame.RDR:
+            self.blend_age_layer = ValueProperty("blendAgeLayer", 0)
+            self.blend_age_dirt = ValueProperty("blendAgeDirt", 0)
 
 
 class EntityList(ListPropertyRequired):

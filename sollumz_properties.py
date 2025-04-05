@@ -507,6 +507,8 @@ class EntityProperties:
     artificial_ambient_occlusion: bpy.props.FloatProperty(
         name="Artificial Ambient Occlusion", default=255)
     tint_value: bpy.props.FloatProperty(name="Tint Value")
+    blend_age_layer: bpy.props.IntProperty(name="Blend Age Layer", default=255)
+    blend_age_dirt: bpy.props.IntProperty(name="Blend Age Dirt", default=255)
 
 
 class ObjectEntityProperties(bpy.types.PropertyGroup, EntityProperties):
@@ -521,14 +523,14 @@ def register():
     bpy.types.Object.sollum_game_type = bpy.props.EnumProperty(
         items=items_from_enums(SollumzGame),
         name="Sollumz Game",
-        default=SollumzGame.GTA,
+        default=import_export_current_game(),
         options={"HIDDEN"}
     )
 
     bpy.types.Scene.sollum_game_type = bpy.props.EnumProperty(
         items=items_from_enums(SollumzGame),
         name="Sollumz Game",
-        default=SollumzGame.GTA,
+        default=import_export_current_game(),
         options={"HIDDEN"},
         update=updateSceneSollumzGame
     )

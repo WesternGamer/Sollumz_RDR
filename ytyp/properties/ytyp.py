@@ -215,6 +215,8 @@ class MloEntitySelectionAccess(MultiSelectAccessMixin, PropertyGroup):
     ambient_occlusion_multiplier: MultiSelectProperty()
     artificial_ambient_occlusion: MultiSelectProperty()
     tint_value: MultiSelectProperty()
+    blend_age_layer: MultiSelectProperty()
+    blend_age_dirt: MultiSelectProperty()
 
     # from MloEntityProperties
     attached_portal_id: MultiSelectProperty()
@@ -627,6 +629,11 @@ class ArchetypeSelectionAccess(MultiSelectAccessMixin, PropertyGroup):
     physics_dictionary: MultiSelectProperty()
     asset_type: MultiSelectProperty()
     asset_name: MultiSelectProperty()
+
+    load_flags: MultiSelectProperty()
+    avoidanceflags: MultiSelectProperty()
+    guid: MultiSelectProperty()
+    unknown_1: MultiSelectProperty()
 
     flags: MultiSelectPointerProperty(ArchetypeFlagsSelectionAccess)
     time_flags: MultiSelectPointerProperty(ArchetypeTimeFlagsSelectionAccess)

@@ -55,6 +55,9 @@ def create_entity_set_entity(entity_xml: ymapxml.Entity, entity_set: EntitySetPr
     entity.ambient_occlusion_multiplier = entity_xml.ambient_occlusion_multiplier
     entity.artificial_ambient_occlusion = entity_xml.artificial_ambient_occlusion
     entity.tint_value = entity_xml.tint_value
+    if current_game() == SollumzGame.RDR:
+        entity.blend_age_layer = entity_xml.blend_age_layer
+        entity.blend_age_dirt = entity_xml.blend_age_dirt
 
     for extension_xml in entity_xml.extensions:
         create_extension(extension_xml, entity)
@@ -164,6 +167,9 @@ def create_mlo_entity(entity_xml: ymapxml.Entity, archetype: ArchetypeProperties
     entity.ambient_occlusion_multiplier = entity_xml.ambient_occlusion_multiplier
     entity.artificial_ambient_occlusion = entity_xml.artificial_ambient_occlusion
     entity.tint_value = entity_xml.tint_value
+    if current_game() == SollumzGame.RDR:
+        entity.blend_age_layer = entity_xml.blend_age_layer
+        entity.blend_age_dirt = entity_xml.blend_age_dirt
 
     for extension_xml in entity_xml.extensions:
         create_extension(extension_xml, entity)
@@ -396,8 +402,10 @@ def create_archetype(archetype_xml: ytypxml.BaseArchetype, ytyp: CMapTypesProper
     archetype.asset_type = get_asset_type_enum(archetype_xml.asset_type)
 
     if current_game() == SollumzGame.RDR:
-        archetype.load_flags = int(archetype_xml.load_flags, 0)
-        archetype.guid = int(archetype_xml.guid, 0)
+        archetype.load_flags = archetype_xml.load_flags if isinstance(
+            archetype_xml.load_flags, int) else int(archetype_xml.load_flags, 0)
+        archetype.guid = archetype_xml.guid if isinstance(
+            archetype_xml.guid, int) else int(archetype_xml.guid, 0)
         archetype.unknown_1 = get_map_entity_type_enum(archetype_xml.unknown_1)
 
     find_and_set_archetype_asset(archetype)
