@@ -2,7 +2,7 @@ import bpy
 from bpy.props import (
     BoolProperty
 )
-from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumType, SollumzGame, items_from_enums
+from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumType, SollumzGame, import_export_current_game, items_from_enums
 from bpy.app.handlers import persistent
 from .collision_materials import collisionmats, rdr_collisionmats
 from ..cwxml.flag_preset import FlagPresetsFile
@@ -454,7 +454,7 @@ def register():
         items=items_from_enums(SollumzGame),
         name="(HIDDEN)Sollumz Game",
         description="Hidden property used to sync with global game selection",
-        default=SollumzGame.GTA,
+        default=import_export_current_game(), # to sync with default game in preferences
         options={"HIDDEN"},
         update=lambda s, c: load_collision_materials(),
     )

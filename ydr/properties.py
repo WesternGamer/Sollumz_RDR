@@ -8,7 +8,7 @@ from ..tools.blenderhelper import lod_level_enum_flag_prop_factory
 from ..sollumz_helper import find_sollumz_parent
 from ..cwxml.light_preset import LightPresetsFile
 from ..cwxml.shader_preset import ShaderPresetsFile
-from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumzGame, items_from_enums, LODLevel, SollumType, LightType, FlagPropertyGroup, TimeFlagsMixin
+from ..sollumz_properties import SOLLUMZ_UI_NAMES, SollumzGame, import_export_current_game, items_from_enums, LODLevel, SollumType, LightType, FlagPropertyGroup, TimeFlagsMixin
 from ..ydr.shader_materials import shadermats, shadermats_by_filename, rdr_shadermats, rdr_shadermats_by_filename
 from .render_bucket import RenderBucket, RenderBucketEnumItems
 from .light_flashiness import Flashiness, LightFlashinessEnumItems
@@ -602,7 +602,7 @@ def register():
         items=items_from_enums(SollumzGame),
         name="(HIDDEN)Sollumz Game",
         description="Hidden property used to sync with global game selection",
-        default=SollumzGame.GTA,
+        default=import_export_current_game(), # to sync with default game in preferences
         options={"HIDDEN"},
         update=lambda s, c: update_shader_list(),
     )

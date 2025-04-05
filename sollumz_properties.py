@@ -523,14 +523,14 @@ def register():
     bpy.types.Object.sollum_game_type = bpy.props.EnumProperty(
         items=items_from_enums(SollumzGame),
         name="Sollumz Game",
-        default=import_export_current_game(),
+        default=SollumzGame.GTA,
         options={"HIDDEN"}
     )
 
     bpy.types.Scene.sollum_game_type = bpy.props.EnumProperty(
         items=items_from_enums(SollumzGame),
         name="Sollumz Game",
-        default=import_export_current_game(),
+        default=import_export_current_game(), # to sync with default game in preferences
         options={"HIDDEN"},
         update=updateSceneSollumzGame
     )
