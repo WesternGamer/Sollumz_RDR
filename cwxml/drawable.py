@@ -968,7 +968,10 @@ class Drawable(ElementTree, AbstractClass):
 
     @property
     def all_models(self) -> list[DrawableModel]:
-        return self.drawable_models_high + self.drawable_models_med + self.drawable_models_low + self.drawable_models_vlow
+        if self.game == SollumzGame.GTA:
+            return self.drawable_models_high + self.drawable_models_med + self.drawable_models_low + self.drawable_models_vlow
+        elif self.game == SollumzGame.RDR:
+            return self.drawable_models_high.models + self.drawable_models_med.models + self.drawable_models_low.models + self.drawable_models_vlow.models
 
     def __init__(self, tag_name: str = "Drawable"):
         super().__init__()
@@ -999,14 +1002,10 @@ class Drawable(ElementTree, AbstractClass):
 
         if current_game() == SollumzGame.GTA: 
             self.joints = Joints()
-            self.drawable_models_high = DrawableModelList(
-                "DrawableModelsHigh")
-            self.drawable_models_med = DrawableModelList(
-                "DrawableModelsMedium")
-            self.drawable_models_low = DrawableModelList(
-                "DrawableModelsLow")
-            self.drawable_models_vlow = DrawableModelList(
-                "DrawableModelsVeryLow")
+            self.drawable_models_high = DrawableModelList("DrawableModelsHigh")
+            self.drawable_models_med = DrawableModelList("DrawableModelsMedium")
+            self.drawable_models_low = DrawableModelList("DrawableModelsLow")
+            self.drawable_models_vlow = DrawableModelList("DrawableModelsVeryLow")
             self.lights = Lights()
         elif current_game() == SollumzGame.RDR:
             self.version = AttributeProperty("version", 1)
