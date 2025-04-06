@@ -22,7 +22,7 @@ from ..tools.fragmenthelper import image_to_shattermap
 from ..tools.meshhelper import flip_uvs
 from ..tools.utils import prop_array_to_vector, reshape_mat_4x3, vector_inv, reshape_mat_3x4
 from ..sollumz_helper import get_parent_inverse, get_sollumz_materials
-from ..sollumz_properties import BOUND_TYPES, SollumType, MaterialType, LODLevel
+from ..sollumz_properties import BOUND_TYPES, SollumType, SollumzGame, MaterialType, LODLevel
 from ..sollumz_preferences import get_export_settings
 from ..ybn.ybnexport import has_col_mats, bound_geom_has_mats
 from ..ydr.ydrexport import create_drawable_xml, write_embedded_textures, get_bone_index, create_model_xml, append_model_xml, set_drawable_xml_extents
@@ -36,6 +36,10 @@ from .properties import (
 
 
 def export_yft(frag_obj: Object, filepath: str) -> bool:
+    if frag_obj.sollum_game_type == SollumzGame.RDR:
+        logger.error("RDR2 fragment export is not supported yet")
+        return False
+
     export_settings = get_export_settings()
 
     frag = locate_fragment_objects(frag_obj)
