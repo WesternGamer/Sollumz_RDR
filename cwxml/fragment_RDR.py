@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from mathutils import Matrix, Vector
 from xml.etree import ElementTree as ET
 
-from ..sollumz_properties import SollumzGame, import_export_current_game as current_game, set_import_export_current_game
+from ..sollumz_properties import SollumzGame, set_import_export_current_game
 from .element import (
     AttributeProperty,
     ElementTree,
@@ -11,29 +11,31 @@ from .element import (
     FlagsProperty,
     ListProperty,
     MatrixProperty,
-    Matrix33Property,
     QuaternionProperty,
     Vector4Property,
     TextProperty,
     ValueProperty,
     VectorProperty
 )
-from .drawable import Drawable, Lights, VertexLayoutList
-from .bound import BoundComposite, RDRBoundFile
-from . import drawable
+from .drawable import Drawable, DrawableMatrices
+from .bound import RDRBoundFile
 
 
 class RDRFragDrawable(Drawable):
     def __init__(self, tag_name: str = "Drawable"):
         set_import_export_current_game(SollumzGame.RDR)
         super().__init__(tag_name)
+
+        # Redefine these properties as they have different tag names in RDR2 XML compared to GTA5
         self.name = TextProperty("FragName", "")
-        self.matrix = MatrixProperty("FragMatrix")
+        self.frag_bound_matrix = MatrixProperty("FragMatrix")
+        self.frag_extra_bound_matrices = DrawableMatrices("ExtraMatrices")
 
 
 class FragDrawableList(ListProperty):
     list_type = RDRFragDrawable
     tag_name = None
+    item_tag_name = "Item"
     allow_none_items = True
 
     def __init__(self, tag_name: str):
@@ -43,7 +45,9 @@ class FragDrawableList(ListProperty):
     def from_xml(cls, element: ET.Element):
         new = cls()
 
-        for child in element.iter():
+        children = element.findall(cls.item_tag_name)
+
+        for child in children:
             if "type" in child.attrib and child.get("type") == "null":
                 new.value.append(None)
             else:
