@@ -20,6 +20,7 @@ from collections.abc import Iterator
 from enum import Enum, IntEnum
 from ...tools.utils import get_list_item
 from ...ydr.light_flashiness import Flashiness, LightFlashinessEnumItems
+from ...sollumz_properties import SollumzGame, import_export_current_game as current_game
 
 if TYPE_CHECKING:
     from .ytyp import ArchetypeProperties
@@ -255,11 +256,22 @@ class ExtensionWithBoneTagMixin:
 class DoorExtensionProperties(BaseExtensionProperties, PropertyGroup):
     enable_limit_angle: BoolProperty(name="Enable Limit Angle")
     starts_locked: BoolProperty(name="Starts Locked")
-    can_break: BoolProperty(name="Can Break")
-    limit_angle_pull: FloatProperty(name="Limit Angle pull")
-    limit_angle_push: FloatProperty(name="Limit Angle push")
     door_target_ratio: FloatProperty(name="Door Target Ratio", min=0)
     audio_hash: StringProperty(name="Audio Hash")
+    
+    can_break: BoolProperty(name="Can Break")
+    if current_game() == SollumzGame.GTA:
+        limit_angle: FloatProperty(name="Limit Angle")
+    elif current_game() == SollumzGame.RDR:
+        auto_opens: BoolProperty(name="Auto Open")
+        unknown_1: BoolProperty(name="Unknown 1")
+        skip_locked_interaction: BoolProperty(name="Skip Locked Interaction")
+        limit_angle_pull: FloatProperty(name="Limit Angle pull")
+        limit_angle_push: FloatProperty(name="Limit Angle push")
+        unknown_2: FloatProperty(name="Unknown 2")
+        unknown_3: FloatProperty(name="Unknown 3")
+        # door_tags: PointerProperty(name="Door tags", type=Object)
+    
 
 
 class ParticleFxType(IntEnum):
