@@ -1,3 +1,4 @@
+import pytest
 from .shared import load_blend_data
 from ...sollumz_properties import LODLevel
 
