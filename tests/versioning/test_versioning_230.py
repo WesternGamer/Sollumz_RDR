@@ -1,7 +1,10 @@
+import pytest
 from numpy.testing import assert_array_equal
 from .shared import load_blend_data
 from ...shared.shader_nodes import SzShaderNodeParameter
 from ...ydr.render_bucket import RenderBucket
+
+pytest.skip("Sollumz RDR doesn't support versioning", allow_module_level=True)
 
 
 def test_versioning_material_render_buckets():

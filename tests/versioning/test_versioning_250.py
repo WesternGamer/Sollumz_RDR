@@ -1,5 +1,8 @@
+import pytest
 from .shared import load_blend_data
 from ...yft.properties import VehiclePaintLayer
+
+pytest.skip("Sollumz RDR doesn't support versioning", allow_module_level=True)
 
 
 def test_versioning_paint_layers():

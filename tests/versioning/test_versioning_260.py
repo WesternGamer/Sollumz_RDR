@@ -1,4 +1,7 @@
+import pytest
 from .shared import load_blend_data
+
+pytest.skip("Sollumz RDR doesn't support versioning", allow_module_level=True)
 
 
 def test_versioning_archetype_uuids():

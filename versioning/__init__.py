@@ -42,6 +42,8 @@ def log(text: str):
 
 @persistent
 def on_load_post(file_path):
+    return # RDR: disabled
+
     if not file_path:
         # Skip startup file
         return
@@ -51,6 +53,8 @@ def on_load_post(file_path):
 
 @persistent
 def on_save_pre(file_path):
+    return # RDR: disabled
+
     # Assign the current version before saving
     for scene in bpy.data.scenes:
         scene.sollumz_internal_version = SOLLUMZ_INTERNAL_VERSION
@@ -66,6 +70,8 @@ def determine_data_version(data: bpy.types.BlendData) -> int:
 
 
 def do_versions(data: bpy.types.BlendData):
+    return # RDR: disabled
+
     data_version = determine_data_version(data)
 
     if data_version >= SOLLUMZ_INTERNAL_VERSION:
@@ -81,6 +87,8 @@ def do_versions(data: bpy.types.BlendData):
 
 
 def register():
+    return # RDR: disabled
+
     # Store the version in the Scenes. Blender doesn't allow global properties saved in .blend files, but there must
     # always exist at least one Scene, so we write the version to all scenes before saving.
     bpy.types.Scene.sollumz_internal_version = bpy.props.IntProperty(
@@ -92,6 +100,8 @@ def register():
 
 
 def unregister():
+    return # RDR: disabled
+
     bpy.app.handlers.save_pre.remove(on_save_pre)
     bpy.app.handlers.load_post.remove(on_load_post)
 

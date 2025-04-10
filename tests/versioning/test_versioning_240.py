@@ -1,6 +1,7 @@
 from .shared import load_blend_data
 from ...sollumz_properties import LODLevel
 
+pytest.skip("Sollumz RDR doesn't support versioning", allow_module_level=True)
 
 def test_versioning_lods():
     data = load_blend_data("v240_lods.blend")
