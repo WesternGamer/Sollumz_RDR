@@ -269,12 +269,12 @@ class PaneModel(ElementTree):
         super().__init__()
         self.projection = MatrixProperty("Projection")
         # self.vertex_layout =
-        self.vertex_count = ValueProperty("VertexLayout")
-        self.unknown_ = ValueProperty("Unknown180")
-        self.unknown_ = ValueProperty("Unknown184")
+        self.vertex_count = ValueProperty("VertexCount")
+        self.unknown_180 = ValueProperty("Unknown180")
+        self.unknown_184 = ValueProperty("Unknown184")
         self.frag_index = ValueProperty("FragIndex")
         self.thickness = ValueProperty("Thickness")
-        self.tangent = ValueProperty("Tangent")
+        self.tangent = VectorProperty("Tangent")
         self.unknown_198 = ValueProperty("Unknown198")
 
 
