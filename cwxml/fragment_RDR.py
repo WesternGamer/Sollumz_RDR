@@ -140,7 +140,7 @@ class RDRPhysicsGroup(ElementTree):
     def __init__(self):
         super().__init__()
         self.name = TextProperty("Name")
-        self.unknown_00 = ValueProperty("Unknown00", 0)
+        self.flags = ValueProperty("Unknown00", 0)
         self.unknown_01 = ValueProperty("Unknown01", 0)
         self.parent_index = ValueProperty("ParentIndex")
         self.child_index = ValueProperty("ChildIndex")
@@ -177,7 +177,7 @@ class RDRPhysicsGroup(ElementTree):
         self.unknown_48 = ValueProperty("Unknown48")
         self.unknown_4A = ValueProperty("Unknown4A")
         self.unknown_4C = ValueProperty("Unknown4C")
-        self.unknown_4E = ValueProperty("Unknown4E")
+        self.glass_window_index = ValueProperty("Unknown4E", 0)
 
 
 class RDRGroupsList(ListProperty):
@@ -267,15 +267,20 @@ class PaneModel(ElementTree):
 
     def __init__(self) -> None:
         super().__init__()
-        self.projection = MatrixProperty("Projection")
+        self.projection_matrix = MatrixProperty("Projection")
         # self.vertex_layout =
         self.vertex_count = ValueProperty("VertexCount")
         self.unknown_180 = ValueProperty("Unknown180")
-        self.unknown_184 = ValueProperty("Unknown184")
+        self.unknown_184 = ValueProperty("Unknown184", 2)
         self.frag_index = ValueProperty("FragIndex")
         self.thickness = ValueProperty("Thickness")
         self.tangent = VectorProperty("Tangent")
         self.unknown_198 = ValueProperty("Unknown198")
+
+    @property
+    def glass_type(self) -> int:
+        # This field is actually a byte at offset 0x186, but CX does not export it to XML since apparently it's always 0 in the files...
+        return 0
 
 
 class PaneModelList(ListProperty):
@@ -383,7 +388,7 @@ class RDRFragment(ElementTree, AbstractClass):
         self.unknown_84h = ValueProperty("Unknown_84h")
         self.drawable = RDRFragDrawable()
         self.bones_transforms = BoneTransformsList()
-        self.pane_model_infos = PaneModelList()
+        self.glass_windows = PaneModelList()
         self.physics = RDRPhysicsLODGroup()
 
     def get_lods_by_id(self):

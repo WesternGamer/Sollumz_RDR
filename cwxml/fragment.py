@@ -117,7 +117,7 @@ class PhysicsGroup(ElementTree):
         self.name = TextProperty("Name")
         self.parent_index = ValueProperty("ParentIndex")
         self.glass_window_index = ValueProperty("GlassWindowIndex")
-        self.glass_flags = ValueProperty("GlassFlags")
+        self.flags = ValueProperty("GlassFlags")
         self.strength = ValueProperty("Strength")
         self.force_transmission_scale_up = ValueProperty(
             "ForceTransmissionScaleUp")
@@ -262,6 +262,9 @@ class GlassWindow(ElementTree):
         self.tangent = VectorProperty("Tangent")
         self.layout = VertexLayoutList()
 
+    @property
+    def glass_type(self) -> int:
+        return self.flags & 0xFF
 
 class GlassWindows(ListProperty):
     list_type = GlassWindow

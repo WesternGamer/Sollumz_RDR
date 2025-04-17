@@ -1132,9 +1132,9 @@ def set_archetype_xml_properties(archetype_props: FragArchetypeProperties, arch_
 
 def set_group_xml_properties(group_props: GroupProperties, group_xml: PhysicsGroup):
     group_xml.glass_window_index = 0
-    group_xml.glass_flags = 0
+    group_xml.flags = 0
     for i in range(len(group_props.flags)):
-        group_xml.glass_flags |= (1 << i) if group_props.flags[i] else 0
+        group_xml.flags |= (1 << i) if group_props.flags[i] else 0
     group_xml.strength = group_props.strength
     group_xml.force_transmission_scale_up = group_props.force_transmission_scale_up
     group_xml.force_transmission_scale_down = group_props.force_transmission_scale_down

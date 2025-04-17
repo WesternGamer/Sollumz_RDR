@@ -120,8 +120,8 @@ def create_fragment_obj(frag_xml: Fragment, filepath: str, name: Optional[str] =
     # if frag_xml.vehicle_glass_windows:
     #     create_vehicle_windows(frag_xml, frag_obj, materials)
 
-    # if frag_xml.glass_windows:
-    #     set_all_glass_window_properties(frag_xml, frag_obj)
+    if frag_xml.glass_windows:
+        set_all_glass_window_properties(frag_xml, frag_obj)
 
     # if frag_xml.lights:
     #     create_frag_lights(frag_xml, frag_obj)
@@ -504,22 +504,18 @@ def get_geometry_material(drawable_xml: Drawable, materials: list[bpy.types.Mate
 
 def set_all_glass_window_properties(frag_xml: Fragment, frag_obj: bpy.types.Object):
     """Set the glass window properties for all bones in the fragment."""
-    if current_game() == SollumzGame.RDR:
-        # TODO: RDR2 fragment glass
-        return
-
-    groups_xml: list[PhysicsGroup] = frag_xml.physics.lod1.groups
-    glass_windows_xml: list[GlassWindow] = frag_xml.glass_windows
-    armature: bpy.types.Armature = frag_obj.data
+    groups_xml = frag_xml.physics.lod1.groups
+    glass_windows_xml = frag_xml.glass_windows
+    armature = frag_obj.data
 
     for group_xml in groups_xml:
-        if (group_xml.glass_flags & 2) == 0:  # flag 2 indicates that the group has a glass window
+        if (group_xml.flags & 2) == 0:  # flag 2 indicates that the group has a glass window
             continue
         if group_xml.name not in armature.bones:
             continue
 
         glass_window_xml = glass_windows_xml[group_xml.glass_window_index]
-        glass_type_idx = glass_window_xml.flags & 0xFF
+        glass_type_idx = glass_window_xml.glass_type
         if glass_type_idx >= len(GlassTypes):
             continue
 
@@ -573,9 +569,9 @@ def set_archetype_properties(arch_xml: Archetype, arch_props: FragArchetypePrope
 
 def set_group_properties(group_xml: PhysicsGroup, bone: bpy.types.Bone):
     bone.group_properties.name = group_xml.name
-    if current_game() == SollumzGame.GTA:
-        for i in range(len(bone.group_properties.flags)):
-            bone.group_properties.flags[i] = (group_xml.glass_flags & (1 << i)) != 0
+    # TODO: RDR verify if all physics group flags remain the same, 'has glass' flag is the same
+    for i in range(len(bone.group_properties.flags)):
+        bone.group_properties.flags[i] = (group_xml.flags & (1 << i)) != 0
     bone.group_properties.strength = group_xml.strength
     bone.group_properties.force_transmission_scale_up = group_xml.force_transmission_scale_up
     bone.group_properties.force_transmission_scale_down = group_xml.force_transmission_scale_down
