@@ -115,16 +115,18 @@ def create_fragment_obj(frag_xml: Fragment, filepath: str, name: Optional[str] =
     create_phys_lod(frag_xml, frag_obj)
     set_all_bone_physics_properties(frag_obj.data, frag_xml)
 
-    # create_phys_child_meshes(frag_xml, frag_obj, drawable_obj, materials)
+    create_phys_child_meshes(frag_xml, frag_obj, drawable_obj, materials)
 
-    # if frag_xml.vehicle_glass_windows:
-    #     create_vehicle_windows(frag_xml, frag_obj, materials)
+    if current_game() == SollumzGame.GTA:
+        if frag_xml.vehicle_glass_windows:
+            create_vehicle_windows(frag_xml, frag_obj, materials)
 
     if frag_xml.glass_windows:
         set_all_glass_window_properties(frag_xml, frag_obj)
 
-    # if frag_xml.lights:
-    #     create_frag_lights(frag_xml, frag_obj)
+    if current_game() == SollumzGame.GTA:
+        if frag_xml.lights:
+            create_frag_lights(frag_xml, frag_obj)
 
     return frag_obj
 
