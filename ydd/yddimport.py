@@ -126,7 +126,7 @@ def RDR_create_ydd_obj_ext_skel(ydd_xml: DrawableDictionary, filepath: str, exte
             external_bones = external_skel.drawable.skeleton.bones
 
         drawable_obj = create_drawable_obj(
-            drawable_xml, filepath, external_armature=external_armature, external_bones=external_bones, game=current_game())
+            drawable_xml, filepath, name=drawable_xml.hash, external_armature=external_armature, external_bones=external_bones, game=current_game())
         drawable_obj.parent = external_armature
 
     return external_armature
@@ -399,7 +399,7 @@ def create_ydd_obj(ydd_xml: DrawableDictionary, filepath: str):
             external_bones = None
 
         drawable_obj = create_drawable_obj(
-            drawable_xml, filepath,name= drawable_xml.hash, external_bones=external_bones, game=current_game())
+            drawable_xml, filepath, name=drawable_xml.hash, external_bones=external_bones, game=current_game())
         drawable_obj.parent = dict_obj
 
     return dict_obj

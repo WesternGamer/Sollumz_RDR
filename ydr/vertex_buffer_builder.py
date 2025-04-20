@@ -17,10 +17,30 @@ from ..cwxml.drawable import VertexBuffer
 from .. import logger
 
 
-def get_bone_by_vgroup(vgroups: bpy.types.VertexGroups, bones: list[bpy.types.Bone]):
+def get_bone_index_by_vgroup(vgroups: bpy.types.VertexGroups, bones: list[bpy.types.Bone]) -> dict[int, int]:
+    """Get vertex group index to bone index mapping. If bone not found, vertex group is mapped to -1."""
     bone_ind_by_name: dict[str, int] = {b.name: i for i, b in enumerate(bones)}
 
     return {i: bone_ind_by_name[group.name] if group.name in bone_ind_by_name else -1 for i, group in enumerate(vgroups)}
+
+
+def get_bone_tag_by_vgroup(vgroups: bpy.types.VertexGroups, bones: list[bpy.types.Bone]) -> dict[int, int]:
+    """Get vertex group index to bone tag mapping. If bone not found, vertex group is mapped to -1."""
+    bone_tag_by_name: dict[str, int] = {b.name: b.bone_properties.tag for b in bones}
+
+    def _tag_for_vgroup(group_name: str) -> int:
+        if (tag := bone_tag_by_name.get(group_name, None)) is None:
+            tag = -1
+            if group_name.startswith("BONE.#"):
+                tag_str = group_name[6:]
+                if tag_str.isdecimal():
+                    tag = int(tag_str)
+
+        return tag
+
+    return {
+        i: _tag_for_vgroup(group.name) for i, group in enumerate(vgroups)
+    }
 
 
 def remove_arr_field(name: str, vertex_arr: NDArray):

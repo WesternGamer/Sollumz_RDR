@@ -66,7 +66,7 @@ from ..sollumz_preferences import get_export_settings
 from ..ybn.ybnexport import create_composite_xml, create_bound_xml
 from .properties import get_model_properties
 from .render_bucket import RenderBucket
-from .vertex_buffer_builder import VertexBufferBuilder, dedupe_and_get_indices, remove_arr_field, remove_unused_colors, get_bone_by_vgroup, remove_unused_uvs
+from .vertex_buffer_builder import VertexBufferBuilder, dedupe_and_get_indices, remove_arr_field, remove_unused_colors, get_bone_index_by_vgroup, get_bone_tag_by_vgroup, remove_unused_uvs
 from .cable_vertex_buffer_builder import CableVertexBufferBuilder
 from .cable import is_cable_mesh
 from .lights import create_xml_lights
@@ -84,14 +84,10 @@ def export_ydr(drawable_obj: bpy.types.Object, filepath: str) -> bool:
     write_embedded_textures(drawable_obj, filepath)
     return True
 
-def test():
-    print(f"drawable {current_game()=}")
 
 def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[bpy.types.Object] = None, materials: Optional[list[bpy.types.Material]] = None, apply_transforms: bool = False):
     """Create a ``Drawable`` cwxml object. Optionally specify an external ``armature_obj`` if ``drawable_obj`` is not an armature."""
-    test()
     set_import_export_current_game(drawable_obj.sollum_game_type)
-    test()
 
     if current_game() == SollumzGame.RDR:
         tag_name = "RDR2Drawable"
@@ -230,23 +226,19 @@ def create_model_xml(model_obj: bpy.types.Object, lod_level: LODLevel, materials
     if transforms_to_apply is not None:
         mesh_eval.transform(transforms_to_apply)
 
-    geometries_data = create_geometries_xml(
+    geometries = create_geometries_xml(
         mesh_eval, materials, bones, model_obj.vertex_groups, parent_obj)
-    
-    geometries = geometries_data[0]
     model_xml.geometries = geometries
 
     if current_game() == SollumzGame.RDR:
-        if geometries_data[1] != None and parent_obj != None and parent_obj.sollum_type == SollumType.DRAWABLE_DICTIONARY:
-            mapping = [bones[index].bone_properties.tag for index in geometries_data[1].values()]
-            model_xml.bone_mapping = mapping
+        if parent_obj is not None and parent_obj.sollum_type == SollumType.DRAWABLE_DICTIONARY and bones and model_obj.vertex_groups:
+            bone_by_vgroup = get_bone_tag_by_vgroup(model_obj.vertex_groups, bones)
+            model_xml.bone_mapping = [bone_tag for bone_tag in bone_by_vgroup.values()]
         else:
             delattr(model_xml, "bone_mapping")
 
-        model_xml.bounding_box_max = get_max_vector_list(
-            geom.bounding_box_max for geom in geometries)
-        model_xml.bounding_box_min = get_min_vector_list(
-            geom.bounding_box_min for geom in geometries)
+        model_xml.bounding_box_max = get_max_vector_list(geom.bounding_box_max for geom in geometries)
+        model_xml.bounding_box_min = get_min_vector_list(geom.bounding_box_min for geom in geometries)
 
     model_xml.bone_index = get_model_bone_index(model_obj)
 
@@ -369,7 +361,10 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
 
     geometries: list[Geometry] = []
 
-    bone_by_vgroup = get_bone_by_vgroup(vertex_groups, bones) if bones and vertex_groups else None
+    if current_game() == SollumzGame.GTA:
+        bone_by_vgroup = get_bone_index_by_vgroup(vertex_groups, bones) if bones and vertex_groups else None
+    elif current_game() == SollumzGame.RDR:
+        bone_by_vgroup = get_bone_tag_by_vgroup(vertex_groups, bones) if bones and vertex_groups else None
 
     total_vert_buffer = VertexBufferBuilder(mesh_eval, bone_by_vgroup).build(current_game())
     for mat_index, loop_inds in loop_inds_by_mat.items():
@@ -409,14 +404,13 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
 
         geom_xml = Geometry()
 
-        geom_xml.bounding_box_max, geom_xml.bounding_box_min = get_geom_extents(
-            vert_buffer["Position"])
+        geom_xml.bounding_box_max, geom_xml.bounding_box_min = get_geom_extents(vert_buffer["Position"])
         geom_xml.shader_index = mat_index
 
-        if bones and "BlendWeights" in vert_buffer.dtype.names:
-            geom_xml.bone_ids = get_bone_ids(bones)
-
         if current_game() == SollumzGame.GTA:
+            if bones and "BlendWeights" in vert_buffer.dtype.names:
+                geom_xml.bone_ids = get_bone_ids(bones)
+
             geom_xml.vertex_buffer.data = vert_buffer
             geom_xml.index_buffer.data = ind_buffer
         elif current_game() == SollumzGame.RDR:
@@ -444,7 +438,7 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
                         semantic_text = semantic_text + str(semantic[1])
                         semantic_format = semantic_format + str(semantic[2])
                         break
-            if bone_by_vgroup != None:
+            if bone_by_vgroup is not None:
                 if parent_obj is not None and parent_obj.sollum_type == SollumType.DRAWABLE_DICTIONARY:
                     geom_xml.bone_count = len(bone_by_vgroup)
                 else:
@@ -461,7 +455,7 @@ def create_geometries_xml(mesh_eval: bpy.types.Mesh, materials: list[bpy.types.M
 
     geometries = sort_geoms_by_shader(geometries)
 
-    return [geometries, bone_by_vgroup]
+    return geometries
 
 
 def sort_geoms_by_shader(geometries: list[Geometry]):

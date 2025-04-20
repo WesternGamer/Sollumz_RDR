@@ -116,17 +116,13 @@ class MeshBuilder:
     def create_vertex_groups(self, obj: bpy.types.Object, bones: list[bpy.types.Bone], game: SollumzGame = SollumzGame.GTA, bone_mapping = None):
         vertex_groups: dict[int, bpy.types.VertexGroup] = {}
 
-        def get_bone_by_tag(tag):
-            bone_by_tag = None
-
+        def _try_get_bone_by_tag(tag: int) -> bpy.types.Bone | None:
             for bone in bones:
                 bone_tag = bone.bone_properties.tag
                 if bone_tag == tag:
-                    bone_by_tag = bone
-                    break
-            if bone_by_tag is None:
-                raise Exception(f"Unable to find bone with tag {tag} to create vertex group")
-            return bone_by_tag
+                    return bone
+
+            return None
 
 
         def create_group(bone_index: int):
@@ -136,18 +132,21 @@ class MeshBuilder:
                 if bones and bone_index < len(bones):
                     bone_name = bones[bone_index].name
             elif game == SollumzGame.RDR:
-                if bone_mapping != None and len(bone_mapping) > 0:
+                if bone_mapping:
                     if bone_index > len(bone_mapping):
                         raise Exception(f"Unable to get bone mapping as index {bone_index} is out of range in {bone_mapping}")
                     tag = bone_mapping[bone_index]
-                    bone = get_bone_by_tag(tag)
-                    bone_name = bone.name
+                    bone = _try_get_bone_by_tag(tag)
+                    if bone:
+                        bone_name = bone.name
+                    else:
+                        bone_name = f"BONE.#{tag}"
                 else:
                     if bones and bone_index < len(bones):
                         bone_name = bones[bone_index].name
             
-            vgroup = obj.vertex_groups.get(bone_name)
-            if vgroup != None:
+            vgroup = obj.vertex_groups.get(bone_name, None)
+            if vgroup:
                 return vgroup
             else:
                 return obj.vertex_groups.new(name=bone_name)
