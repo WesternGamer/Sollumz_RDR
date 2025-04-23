@@ -51,8 +51,7 @@ def create_ydd_xml(ydd_obj: bpy.types.Object, exclude_skeleton: bool = False):
     if current_game() == SollumzGame.GTA:
         ydd_xml.sort(key=get_hash)
     elif current_game() == SollumzGame.RDR:
-        ydd_xml.drawables.sort(key=get_hash)
-   
+        ydd_xml.drawables.sort(key=rdr_get_hash_literal)
 
     return ydd_xml
 
@@ -66,3 +65,6 @@ def find_ydd_armature(ydd_obj: bpy.types.Object):
 
 def get_hash(item):
     return jenkhash.name_to_hash(item.name.split(".")[0])
+
+def rdr_get_hash_literal(item):
+    return jenkhash.name_to_hash_literal(item.hash)
