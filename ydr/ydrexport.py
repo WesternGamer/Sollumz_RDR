@@ -122,8 +122,7 @@ def create_drawable_xml(drawable_obj: bpy.types.Object, armature_obj: Optional[b
         armature_obj = armature_obj or drawable_obj
 
         drawable_xml.skeleton = create_skeleton_xml(armature_obj, apply_transforms)
-        if current_game() == SollumzGame.GTA:
-            drawable_xml.joints = create_joints_xml(armature_obj)
+        drawable_xml.joints = create_joints_xml(armature_obj)
 
         bones = armature_obj.data.bones
 

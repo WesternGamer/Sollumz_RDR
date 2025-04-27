@@ -539,7 +539,10 @@ class BoneLimit(ElementTree):
 
     def __init__(self):
         super().__init__()
-        self.bone_id = ValueProperty("BoneId", 0)
+        if current_game() == SollumzGame.GTA:
+            self.bone_id = ValueProperty("BoneId", 0)
+        elif current_game() == SollumzGame.RDR:
+            self.bone_id = ValueProperty("BoneTag", 0)
         self.min = VectorProperty("Min")
         self.max = VectorProperty("Max")
 
@@ -549,7 +552,8 @@ class RotationLimit(BoneLimit):
 
     def __init__(self):
         super().__init__()
-        self.unk_a = ValueProperty("UnknownA", 0)
+        if current_game() == SollumzGame.GTA:
+            self.unk_a = ValueProperty("UnknownA", 0)
 
 
 class RotationLimitsList(ListProperty):
@@ -999,9 +1003,9 @@ class Drawable(ElementTree, AbstractClass):
         self.flags_vlow = ValueProperty("FlagsVlow", 0)
         self.shader_group = ShaderGroup()
         self.skeleton = Skeleton()
+        self.joints = Joints()
 
         if current_game() == SollumzGame.GTA: 
-            self.joints = Joints()
             self.drawable_models_high = DrawableModelList("DrawableModelsHigh")
             self.drawable_models_med = DrawableModelList("DrawableModelsMedium")
             self.drawable_models_low = DrawableModelList("DrawableModelsLow")

@@ -136,8 +136,7 @@ def create_frag_armature(frag_xml: Fragment, name: Optional[str] = None):
     name = name or frag_xml.name.replace("pack:/", "")
     drawable_xml = frag_xml.drawable
     frag_obj = create_armature_obj_from_skel(drawable_xml.skeleton, name, SollumType.FRAGMENT)
-    if current_game() == SollumzGame.GTA:
-        create_joint_constraints(frag_obj, drawable_xml.joints)
+    create_joint_constraints(frag_obj, drawable_xml.joints)
 
     set_fragment_properties(frag_xml, frag_obj)
 

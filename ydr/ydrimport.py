@@ -202,8 +202,7 @@ def set_drawable_model_properties(model_props: DrawableModelProperties, model_xm
 
 def create_drawable_armature(drawable_xml: Drawable, name: str):
     drawable_obj = create_armature_obj_from_skel(drawable_xml.skeleton, name, SollumType.DRAWABLE)
-    if current_game() == SollumzGame.GTA:
-        create_joint_constraints(drawable_obj, drawable_xml.joints)
+    create_joint_constraints(drawable_obj, drawable_xml.joints)
 
     set_drawable_properties(drawable_obj, drawable_xml, True)
 
@@ -220,10 +219,10 @@ def create_armature_obj_from_skel(skeleton: Skeleton, name: str, sollum_type: So
 
 
 def create_joint_constraints(armature_obj: bpy.types.Object, joints: Joints):
-    if hasattr(joints, "rotation_limits") and joints.rotation_limits:
+    if joints.rotation_limits:
         apply_rotation_limits(joints.rotation_limits, armature_obj)
 
-    if hasattr(joints, "translation_limits") and joints.translation_limits:
+    if joints.translation_limits:
         apply_translation_limits(joints.translation_limits, armature_obj)
 
 
