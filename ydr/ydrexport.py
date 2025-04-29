@@ -1044,10 +1044,18 @@ def create_translation_limit_xml(constraint: bpy.types.LimitRotationConstraint, 
 
 def set_joint_properties(joint: BoneLimit, constraint: bpy.types.LimitRotationConstraint | bpy.types.LimitLocationConstraint, bone_tag: int):
     joint.bone_id = bone_tag
-    joint.min = Vector(
-        (constraint.min_x, constraint.min_y, constraint.min_z))
-    joint.max = Vector(
-        (constraint.max_x, constraint.max_y, constraint.max_z))
+    if current_game() == SollumzGame.GTA:
+        joint.min = Vector(
+            (constraint.min_x, constraint.min_y, constraint.min_z))
+        joint.max = Vector(
+            (constraint.max_x, constraint.max_y, constraint.max_z))
+    elif current_game() == SollumzGame.RDR:
+        # RDR2 (rdr3) has an unknown additional w vector which is set to positive or negative pi if it is the max or min respectively. 
+        # The first three vectors still makes up a Euler.
+        joint.min = Vector(
+            (constraint.min_x, constraint.min_y, constraint.min_z, -3.1415927))
+        joint.max = Vector(
+            (constraint.max_x, constraint.max_y, constraint.max_z, 3.1415927))
 
     return joint
 

@@ -541,10 +541,12 @@ class BoneLimit(ElementTree):
         super().__init__()
         if current_game() == SollumzGame.GTA:
             self.bone_id = ValueProperty("BoneId", 0)
+            self.min = VectorProperty("Min")
+            self.max = VectorProperty("Max")
         elif current_game() == SollumzGame.RDR:
+            self.min = Vector4Property("Min")
+            self.max = Vector4Property("Max")
             self.bone_id = ValueProperty("BoneTag", 0)
-        self.min = VectorProperty("Min")
-        self.max = VectorProperty("Max")
 
 
 class RotationLimit(BoneLimit):
